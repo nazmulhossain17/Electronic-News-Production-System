@@ -1,0 +1,46 @@
+{
+  "categories": [
+    {
+      "id": "cat-001",
+      "name": "Breaking News",
+      "description": "Urgent and breaking news stories",
+      "createdAt": "2025-01-01T00:00:00Z",
+      "updatedAt": "2025-01-01T00:00:00Z"
+    },
+    {
+      "id": "cat-002",
+      "name": "Weather",
+      "description": "Weather updates and forecasts",
+      "createdAt": "2025-01-01T00:00:00Z",
+      "updatedAt": "2025-01-01T00:00:00Z"
+    },
+    {
+      "id": "cat-003",
+      "name": "Business",
+      "description": "Business and economy news",
+      "createdAt": "2025-01-01T00:00:00Z",
+      "updatedAt": "2025-01-01T00:00:00Z"
+    },
+    {
+      "id": "cat-004",
+      "name": "Sports",
+      "description": "Sports news and updates",
+      "createdAt": "2025-01-01T00:00:00Z",
+      "updatedAt": "2025-01-01T00:00:00Z"
+    },
+    {
+      "id": "cat-005",
+      "name": "Entertainment",
+      "description": "Entertainment and lifestyle news",
+      "createdAt": "2025-01-01T00:00:00Z",
+      "updatedAt": "2025-01-01T00:00:00Z"
+    },
+    {
+      "id": "cat-006",
+      "name": "Politics",
+      "description": "Political news and analysis",
+      "createdAt": "2025-01-01T00:00:00Z",
+      "updatedAt": "2025-01-01T00:00:00Z"
+    }
+  ]
+}

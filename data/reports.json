@@ -1,0 +1,88 @@
+{
+  "reports": [
+    {
+      "id": "rep-001",
+      "location": "Dhaka",
+      "stories": "Breaking: Traffic Congestion",
+      "segment": "Live",
+      "description": "Major traffic congestion reported in Gulshan area due to road construction work.",
+      "userId": "user-001",
+      "categoryId": "cat-001",
+      "status": "DRAFT",
+      "timeSlot": "09:15",
+      "newBulletinesId": "bull-001",
+      "createdAt": "2025-12-28T07:00:00Z",
+      "updatedAt": "2025-12-28T08:00:00Z"
+    },
+    {
+      "id": "rep-002",
+      "location": "Dhaka",
+      "stories": "Weather Update",
+      "segment": "SOT",
+      "description": "Meteorological department forecasts scattered rain showers in Dhaka division.",
+      "userId": "user-002",
+      "categoryId": "cat-002",
+      "status": "DRAFT",
+      "timeSlot": "09:30",
+      "newBulletinesId": "bull-001",
+      "createdAt": "2025-12-28T06:30:00Z",
+      "updatedAt": "2025-12-28T07:45:00Z"
+    },
+    {
+      "id": "rep-003",
+      "location": "Chittagong",
+      "stories": "Port Operations",
+      "segment": "PKG",
+      "description": "Chittagong port handles record cargo volume this month.",
+      "userId": "user-001",
+      "categoryId": "cat-003",
+      "status": "DRAFT",
+      "timeSlot": "09:45",
+      "newBulletinesId": "bull-001",
+      "createdAt": "2025-12-28T06:00:00Z",
+      "updatedAt": "2025-12-28T07:30:00Z"
+    },
+    {
+      "id": "rep-004",
+      "location": "Sylhet",
+      "stories": "Sports: Cricket Match",
+      "segment": "Live",
+      "description": "Local cricket team wins regional championship.",
+      "userId": "user-003",
+      "categoryId": "cat-004",
+      "status": "DRAFT",
+      "timeSlot": "12:00",
+      "newBulletinesId": "bull-002",
+      "createdAt": "2025-12-28T08:00:00Z",
+      "updatedAt": "2025-12-28T09:00:00Z"
+    },
+    {
+      "id": "rep-005",
+      "location": "Dhaka",
+      "stories": "LIVE: Press Conference",
+      "segment": "Live",
+      "description": "Government announces new infrastructure projects for the capital city.",
+      "userId": "user-001",
+      "categoryId": "cat-001",
+      "status": "DRAFT",
+      "timeSlot": "18:00",
+      "newBulletinesId": "bull-003",
+      "createdAt": "2025-12-28T10:00:00Z",
+      "updatedAt": "2025-12-28T11:00:00Z"
+    },
+    {
+      "id": "rep-006",
+      "location": "Rajshahi",
+      "stories": "Entertainment: Film Festival",
+      "segment": "PKG",
+      "description": "Annual film festival showcases local and international cinema.",
+      "userId": "user-002",
+      "categoryId": "cat-005",
+      "status": "DRAFT",
+      "timeSlot": "18:30",
+      "newBulletinesId": "bull-003",
+      "createdAt": "2025-12-28T09:00:00Z",
+      "updatedAt": "2025-12-28T10:30:00Z"
+    }
+  ]
+}
