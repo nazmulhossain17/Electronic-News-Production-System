@@ -1,8 +1,8 @@
 "use client"
 
-import { useEffect, useState, useMemo, useCallback } from "react"
+import { useEffect, useState, useMemo, useCallback, useRef } from "react"
 import { useQuery, useQueryClient, useMutation } from "@tanstack/react-query"
-import { Plus, Zap } from "lucide-react"
+import { Plus, Zap, Trash2, X, CheckSquare, Square } from "lucide-react"
 import { DragEndEvent, DragStartEvent } from "@dnd-kit/core"
 import { arrayMove } from "@dnd-kit/sortable"
 
@@ -14,6 +14,7 @@ import { RundownDisplayItem } from "@/types/reporter"
 import BulletinsSidebar from "./reporter/BulletinsSidebar"
 import RundownTable from "./reporter/RundownTable"
 import DescriptionPanel from "./reporter/DescriptionPanel"
+import DeleteConfirmModal from "./reporter/DeleteConfirmModal"
 
 export default function ReporterPage() {
   const queryClient = useQueryClient()
@@ -22,6 +23,11 @@ export default function ReporterPage() {
   const [selectedBulletin, setSelectedBulletin] = useState<string | null>(null)
   const [selectedItemId, setSelectedItemId] = useState<string | null>(null)
   const [selectedSegmentId, setSelectedSegmentId] = useState<string | null>(null)
+
+  // ─── Multi-Delete State ─────────────────────────────────────────
+  const [selectedForDeleteIds, setSelectedForDeleteIds] = useState<Set<string>>(new Set())
+  const [showDeleteModal, setShowDeleteModal] = useState(false)
+  const [lastSelectedIndex, setLastSelectedIndex] = useState<number | null>(null)
 
   // ─── Edit State ─────────────────────────────────────────────────
   const [editDescription, setEditDescription] = useState("")
@@ -42,6 +48,9 @@ export default function ReporterPage() {
 
   // ─── Drag State ─────────────────────────────────────────────────
   const [activeId, setActiveId] = useState<string | null>(null)
+
+  // ─── Delete Progress ────────────────────────────────────────────
+  const [isDeleting, setIsDeleting] = useState(false)
 
   // ─── Queries ────────────────────────────────────────────────────
 
@@ -214,6 +223,9 @@ export default function ReporterPage() {
 
   const selectedItem = rundownItems.find((item) => item.id === selectedItemId)
   const selectedSegment = selectedItem?.segments.find((s) => s.id === selectedSegmentId)
+  
+  // Get items selected for deletion
+  const selectedForDeleteItems = rundownItems.filter((item) => selectedForDeleteIds.has(item.id))
 
   // ─── Effects ────────────────────────────────────────────────────
 
@@ -240,6 +252,22 @@ export default function ReporterPage() {
     }
   }, [selectedSegment, selectedItem, categories])
 
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape" && selectedForDeleteIds.size > 0 && !showDeleteModal) {
+        setSelectedForDeleteIds(new Set())
+        setLastSelectedIndex(null)
+      }
+      // Delete key to open modal
+      if (e.key === "Delete" && selectedForDeleteIds.size > 0 && !showDeleteModal) {
+        setShowDeleteModal(true)
+      }
+    }
+
+    document.addEventListener("keydown", handleKeyDown)
+    return () => document.removeEventListener("keydown", handleKeyDown)
+  }, [selectedForDeleteIds, showDeleteModal])
+
   // ─── Helpers ────────────────────────────────────────────────────
 
   const showMessage = useCallback((msg: string) => {
@@ -247,12 +275,121 @@ export default function ReporterPage() {
     setTimeout(() => setSaveMessage(""), 3000)
   }, [])
 
-  // ─── Handlers ───────────────────────────────────────────────────
+  // ─── Multi-Select Delete Handlers ───────────────────────────────
+
+  const handlePgClick = useCallback((item: RundownDisplayItem, e: React.MouseEvent) => {
+    const currentIndex = rundownItems.findIndex((i) => i.id === item.id)
+    
+    if (e.shiftKey && lastSelectedIndex !== null) {
+      // Shift+Click: Select range
+      const start = Math.min(lastSelectedIndex, currentIndex)
+      const end = Math.max(lastSelectedIndex, currentIndex)
+      const rangeIds = rundownItems.slice(start, end + 1).map((i) => i.id)
+      
+      setSelectedForDeleteIds((prev) => {
+        const newSet = new Set(prev)
+        rangeIds.forEach((id) => newSet.add(id))
+        return newSet
+      })
+    } else if (e.ctrlKey || e.metaKey) {
+      // Ctrl+Click: Toggle single item
+      setSelectedForDeleteIds((prev) => {
+        const newSet = new Set(prev)
+        if (newSet.has(item.id)) {
+          newSet.delete(item.id)
+        } else {
+          newSet.add(item.id)
+        }
+        return newSet
+      })
+      setLastSelectedIndex(currentIndex)
+    } else {
+      // Regular click: Toggle single item (clear others)
+      setSelectedForDeleteIds((prev) => {
+        if (prev.has(item.id) && prev.size === 1) {
+          return new Set()
+        }
+        return new Set([item.id])
+      })
+      setLastSelectedIndex(currentIndex)
+    }
+  }, [rundownItems, lastSelectedIndex])
+
+  const handleSelectAll = useCallback(() => {
+    if (selectedForDeleteIds.size === rundownItems.length) {
+      // Deselect all
+      setSelectedForDeleteIds(new Set())
+    } else {
+      // Select all
+      setSelectedForDeleteIds(new Set(rundownItems.map((item) => item.id)))
+    }
+  }, [rundownItems, selectedForDeleteIds])
+
+  const handleDeleteClick = useCallback(() => {
+    if (selectedForDeleteIds.size > 0) {
+      setShowDeleteModal(true)
+    }
+  }, [selectedForDeleteIds])
+
+  const handleConfirmDelete = useCallback(async () => {
+    if (selectedForDeleteIds.size === 0) return
+
+    setIsDeleting(true)
+    const idsToDelete = Array.from(selectedForDeleteIds)
+    let successCount = 0
+    let failCount = 0
+
+    for (const id of idsToDelete) {
+      try {
+        await api.rows.delete(id)
+        successCount++
+      } catch (error) {
+        console.error(`Failed to delete row ${id}:`, error)
+        failCount++
+      }
+    }
+
+    // Refresh data
+    queryClient.invalidateQueries({ queryKey: ["bulletin", selectedBulletin] })
+    queryClient.invalidateQueries({ queryKey: ["bulletin-segments", selectedBulletin] })
+
+    // Clear selection
+    setSelectedForDeleteIds(new Set())
+    setLastSelectedIndex(null)
+    setShowDeleteModal(false)
+    setIsDeleting(false)
+
+    // Clear item selection if it was deleted
+    if (selectedItemId && idsToDelete.includes(selectedItemId)) {
+      setSelectedItemId(null)
+      setSelectedSegmentId(null)
+    }
+
+    // Show result message
+    if (failCount === 0) {
+      showMessage(`${successCount} ${successCount === 1 ? "story" : "stories"} deleted successfully`)
+    } else {
+      showMessage(`Deleted ${successCount}, failed ${failCount}`)
+    }
+  }, [selectedForDeleteIds, selectedBulletin, selectedItemId, queryClient, showMessage])
+
+  const handleCancelDelete = useCallback(() => {
+    setShowDeleteModal(false)
+  }, [])
+
+  const handleClearDeleteSelection = useCallback(() => {
+    setSelectedForDeleteIds(new Set())
+    setLastSelectedIndex(null)
+  }, [])
+
+  // ─── Other Handlers ─────────────────────────────────────────────
 
   const handleSelectBulletin = useCallback((id: string) => {
     setSelectedBulletin(id)
     setSelectedItemId(null)
     setSelectedSegmentId(null)
+    setSelectedForDeleteIds(new Set())
+    setLastSelectedIndex(null)
   }, [])
 
   const handleDragStart = useCallback((event: DragStartEvent) => {
@@ -308,7 +445,6 @@ export default function ReporterPage() {
     setSelectedSegmentId(segment.id)
   }, [])
 
-  // Slug editing
   const handleSlugDoubleClick = useCallback((rowId: string, slug: string) => {
     setEditingSlugRowId(rowId)
     setTempSlugValue(slug)
@@ -348,7 +484,6 @@ export default function ReporterPage() {
     setTempSlugValue("")
   }, [])
 
-  // Segment editing
   const handleSegmentDoubleClick = useCallback((segment: Segment) => {
     if (segment.id.startsWith("temp-")) return
     setEditingSegmentId(segment.id)
@@ -421,7 +556,6 @@ export default function ReporterPage() {
     [deleteSegmentMutation]
   )
 
-  // Description panel
   const handleDescriptionChange = useCallback(
     (e: React.ChangeEvent<HTMLTextAreaElement>) => {
       if (!selectedSegmentId || selectedSegmentId.startsWith("temp-")) return
@@ -506,11 +640,92 @@ export default function ReporterPage() {
     })
   }, [selectedBulletin, rows, createRowMutation])
 
+  // ─── Styles ─────────────────────────────────────────────────────
+
+  const styles = {
+    deleteSelectionBar: {
+      display: "flex",
+      alignItems: "center",
+      gap: "12px",
+      background: "rgba(231, 76, 60, 0.1)",
+      border: "1px solid rgba(231, 76, 60, 0.3)",
+      borderRadius: "6px",
+      padding: "6px 12px",
+    },
+    selectedCount: {
+      fontSize: "13px",
+      color: "#ecf0f1",
+      display: "flex",
+      alignItems: "center",
+      gap: "6px",
+    },
+    selectedCountNumber: {
+      background: "#e74c3c",
+      color: "white",
+      padding: "2px 8px",
+      borderRadius: "10px",
+      fontWeight: 600,
+      fontSize: "12px",
+    },
+    btnSelectAll: {
+      display: "flex",
+      alignItems: "center",
+      gap: "4px",
+      padding: "4px 8px",
+      background: "transparent",
+      border: "1px solid rgba(255, 255, 255, 0.2)",
+      borderRadius: "4px",
+      color: "#bdc3c7",
+      fontSize: "12px",
+      cursor: "pointer",
+      transition: "all 0.2s",
+    },
+    btnDeleteSelected: {
+      display: "flex",
+      alignItems: "center",
+      gap: "6px",
+      padding: "6px 12px",
+      background: "#e74c3c",
+      color: "white",
+      border: "none",
+      borderRadius: "4px",
+      fontSize: "13px",
+      fontWeight: 500,
+      cursor: "pointer",
+      transition: "all 0.2s",
+    },
+    btnClearSelection: {
+      display: "flex",
+      alignItems: "center",
+      justifyContent: "center",
+      width: "28px",
+      height: "28px",
+      background: "transparent",
+      border: "1px solid rgba(255, 255, 255, 0.2)",
+      borderRadius: "4px",
+      color: "#95a5a6",
+      cursor: "pointer",
+      transition: "all 0.2s",
+    },
+    reorderIndicator: {
+      fontSize: "12px",
+      color: "#f39c12",
+      marginLeft: "12px",
+    },
+    hint: {
+      fontSize: "11px",
+      color: "#7f8c8d",
+      marginLeft: "8px",
+    },
+  }
+
   // ─── Render ─────────────────────────────────────────────────────
 
   const bulletinHeader = currentBulletin
     ? `${currentBulletin.title} [${new Date(currentBulletin.airDate).toLocaleDateString()} ${currentBulletin.startTime}]`
     : "Select a bulletin"
+
+  const allSelected = rundownItems.length > 0 && selectedForDeleteIds.size === rundownItems.length
 
   return (
     <>
@@ -519,20 +734,85 @@ export default function ReporterPage() {
         {/* Top Header */}
         <div className="top-header">
           <div className="title">AP ENPS - Newsroom</div>
+          
           <div className="header-actions">
-            <button
-              className="btn-create-bulletin"
-              onClick={() => autoGenerateMutation.mutate()}
-              disabled={autoGenerateMutation.isPending}
-            >
-              <Zap size={16} />
-              <span>{autoGenerateMutation.isPending ? "Generating..." : "Auto-Generate"}</span>
-            </button>
-            <button className="btn-create-bulletin" onClick={() => setShowBulletinModal(true)}>
-              <Plus size={16} />
-              <span>New Bulletin</span>
-            </button>
+            {/* Delete Selection Bar - Shows when items selected */}
+            {selectedForDeleteIds.size > 0 && (
+              <div style={styles.deleteSelectionBar}>
+                <span style={styles.selectedCount}>
+                  <span style={styles.selectedCountNumber}>{selectedForDeleteIds.size}</span>
+                  {selectedForDeleteIds.size === 1 ? "story" : "stories"} selected
+                </span>
+                
+                <button
+                  style={styles.btnSelectAll}
+                  onClick={handleSelectAll}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.background = "rgba(255, 255, 255, 0.1)"
+                    e.currentTarget.style.borderColor = "rgba(255, 255, 255, 0.3)"
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.background = "transparent"
+                    e.currentTarget.style.borderColor = "rgba(255, 255, 255, 0.2)"
+                  }}
+                  title={allSelected ? "Deselect all" : "Select all"}
+                >
+                  {allSelected ? <CheckSquare size={14} /> : <Square size={14} />}
+                  {allSelected ? "Deselect All" : "Select All"}
+                </button>
+
+                <button
+                  style={styles.btnDeleteSelected}
+                  onClick={handleDeleteClick}
+                  onMouseEnter={(e) => (e.currentTarget.style.background = "#c0392b")}
+                  onMouseLeave={(e) => (e.currentTarget.style.background = "#e74c3c")}
+                >
+                  <Trash2 size={16} />
+                  <span>Delete {selectedForDeleteIds.size === 1 ? "Story" : "Stories"}</span>
+                </button>
+
+                <button
+                  style={styles.btnClearSelection}
+                  onClick={handleClearDeleteSelection}
+                  title="Clear selection (Esc)"
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.background = "rgba(255, 255, 255, 0.1)"
+                    e.currentTarget.style.color = "#ecf0f1"
+                    e.currentTarget.style.borderColor = "rgba(255, 255, 255, 0.3)"
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.background = "transparent"
+                    e.currentTarget.style.color = "#95a5a6"
+                    e.currentTarget.style.borderColor = "rgba(255, 255, 255, 0.2)"
+                  }}
+                >
+                  <X size={16} />
+                </button>
+
+                <span style={styles.hint}>
+                  Ctrl+Click to add • Shift+Click for range
+                </span>
+              </div>
+            )}
+
+            {selectedForDeleteIds.size === 0 && (
+              <>
+                <button
+                  className="btn-create-bulletin"
+                  onClick={() => autoGenerateMutation.mutate()}
+                  disabled={autoGenerateMutation.isPending}
+                >
+                  <Zap size={16} />
+                  <span>{autoGenerateMutation.isPending ? "Generating..." : "Auto-Generate"}</span>
+                </button>
+                <button className="btn-create-bulletin" onClick={() => setShowBulletinModal(true)}>
+                  <Plus size={16} />
+                  <span>New Bulletin</span>
+                </button>
+              </>
+            )}
           </div>
+
           <div className="datetime">
             {new Date().toLocaleString("en-US", {
               weekday: "short",
@@ -558,13 +838,16 @@ export default function ReporterPage() {
           <div className="rundown-scroll-wrapper">
             <div className="rundown-header">
               <div className="rundown-title">{bulletinHeader}</div>
-              {reorderRowsMutation.isPending && <span className="reorder-indicator">Saving order...</span>}
+              {reorderRowsMutation.isPending && (
+                <span style={styles.reorderIndicator}>Saving order...</span>
+              )}
             </div>
 
             <RundownTable
               items={rundownItems}
               isLoading={rowsLoading}
               selectedItemId={selectedItemId}
+              selectedForDeleteIds={selectedForDeleteIds}
               selectedSegmentId={selectedSegmentId}
               activeId={activeId}
               editingSlugRowId={editingSlugRowId}
@@ -575,6 +858,7 @@ export default function ReporterPage() {
               onDragStart={handleDragStart}
               onDragEnd={handleDragEnd}
               onRowClick={handleRowClick}
+              onPgClick={handlePgClick}
               onSlugDoubleClick={handleSlugDoubleClick}
               onSlugChange={setTempSlugValue}
               onSlugSave={handleSlugSave}
@@ -636,7 +920,21 @@ export default function ReporterPage() {
         </div>
       </div>
 
+      {/* Modals */}
       <BulletinCreateModal isOpen={showBulletinModal} onClose={() => setShowBulletinModal(false)} />
+      
+      <DeleteConfirmModal
+        isOpen={showDeleteModal}
+        items={selectedForDeleteItems.map((item) => ({
+          id: item.id,
+          page: item.page,
+          slug: item.slug,
+        }))}
+        itemType="story"
+        onConfirm={handleConfirmDelete}
+        onCancel={handleCancelDelete}
+        isDeleting={isDeleting}
+      />
     </>
   )
 }

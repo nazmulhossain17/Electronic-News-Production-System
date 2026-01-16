@@ -19,14 +19,15 @@ import {
 } from "@dnd-kit/sortable"
 
 import { Segment } from "@/lib/api-client"
+import { RundownDisplayItem } from "@/types/reporter"
 import SortableRow from "./SortableRow"
 import DragOverlayRow from "./DragOverlayRow"
-import { RundownDisplayItem } from "@/types/reporter"
 
 interface RundownTableProps {
   items: RundownDisplayItem[]
   isLoading: boolean
   selectedItemId: string | null
+  selectedForDeleteIds: Set<string>
   selectedSegmentId: string | null
   activeId: string | null
   editingSlugRowId: string | null
@@ -37,6 +38,7 @@ interface RundownTableProps {
   onDragStart: (event: DragStartEvent) => void
   onDragEnd: (event: DragEndEvent) => void
   onRowClick: (item: RundownDisplayItem) => void
+  onPgClick: (item: RundownDisplayItem, e: React.MouseEvent) => void
   onSlugDoubleClick: (rowId: string, slug: string) => void
   onSlugChange: (value: string) => void
   onSlugSave: () => void
@@ -55,6 +57,7 @@ export default function RundownTable({
   items,
   isLoading,
   selectedItemId,
+  selectedForDeleteIds,
   selectedSegmentId,
   activeId,
   editingSlugRowId,
@@ -65,6 +68,7 @@ export default function RundownTable({
   onDragStart,
   onDragEnd,
   onRowClick,
+  onPgClick,
   onSlugDoubleClick,
   onSlugChange,
   onSlugSave,
@@ -94,41 +98,82 @@ export default function RundownTable({
 
   const activeItem = items.find((item) => item.id === activeId)
 
+  // ─── Styles ─────────────────────────────────────────────────────
+
+  const styles = {
+    container: {
+      flex: 1,
+      overflow: "auto",
+    },
+    table: {
+      width: "100%",
+      borderCollapse: "collapse" as const,
+      fontSize: "12px",
+      userSelect: "none" as const,
+    },
+    th: {
+      position: "sticky" as const,
+      top: 0,
+      background: "#2c3e50",
+      color: "#ecf0f1",
+      padding: "10px 8px",
+      textAlign: "left" as const,
+      fontWeight: 600,
+      fontSize: "11px",
+      textTransform: "uppercase" as const,
+      letterSpacing: "0.5px",
+      borderBottom: "2px solid #3498db",
+      whiteSpace: "nowrap" as const,
+      zIndex: 10,
+    },
+    thDrag: {
+      width: "30px",
+      minWidth: "30px",
+      maxWidth: "30px",
+    },
+    emptyRow: {
+      textAlign: "center" as const,
+      padding: "40px 20px",
+      color: "#7f8c8d",
+      fontSize: "14px",
+    },
+  }
+
   return (
-    <div className="table-container">
+    <div style={styles.container}>
       <DndContext
         sensors={sensors}
         collisionDetection={closestCenter}
         onDragStart={onDragStart}
         onDragEnd={onDragEnd}
       >
-        <table className="enps-rundown-table">
+        <table style={styles.table}>
           <thead>
             <tr>
-              <th className="drag-col"></th>
-              <th>Pg</th>
-              <th>Story Slug</th>
-              <th>Segments</th>
-              <th>Story Produc</th>
-              <th>Final Appr</th>
-              <th>Float</th>
-              <th>Est Duration</th>
-              <th>Actual</th>
-              <th>Front</th>
-              <th>Cume</th>
-              <th>Last Mod By</th>
+              <th style={{ ...styles.th, ...styles.thDrag }}></th>
+              <th style={styles.th}>Pg</th>
+              <th style={styles.th}>Story Slug</th>
+              <th style={styles.th}>Segments</th>
+              <th style={styles.th}>Story Produc</th>
+              <th style={styles.th}>Final Appr</th>
+              <th style={styles.th}>Float</th>
+              <th style={styles.th}>Est Duration</th>
+              <th style={styles.th}>Actual</th>
+              <th style={styles.th}>Front</th>
+              <th style={styles.th}>Cume</th>
+              <th style={styles.th}>Last Mod By</th>
             </tr>
           </thead>
           <tbody>
             {isLoading ? (
               <tr>
-                <td colSpan={12} className="empty-row">
+                <td colSpan={12} style={styles.emptyRow}>
                   Loading stories...
                 </td>
               </tr>
             ) : items.length === 0 ? (
               <tr>
-                <td colSpan={12} className="empty-row">
+                <td colSpan={12} style={styles.emptyRow}>
                   No stories in this bulletin yet
                 </td>
               </tr>
@@ -142,6 +187,7 @@ export default function RundownTable({
                     key={item.id}
                     item={item}
                     isSelected={selectedItemId === item.id}
+                    isSelectedForDelete={selectedForDeleteIds.has(item.id)}
                     selectedSegmentId={selectedSegmentId}
                     editingSlugRowId={editingSlugRowId}
                     tempSlugValue={tempSlugValue}
@@ -151,6 +197,7 @@ export default function RundownTable({
                     slugInputRef={slugInputRef}
                     segmentInputRef={segmentInputRef}
                     onRowClick={onRowClick}
+                    onPgClick={onPgClick}
                     onSlugDoubleClick={onSlugDoubleClick}
                     onSlugChange={onSlugChange}
                     onSlugKeyDown={(e) => {
