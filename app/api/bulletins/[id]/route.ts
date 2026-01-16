@@ -1,93 +1,55 @@
 // ============================================================================
 // File: app/api/bulletins/[id]/route.ts
-// Description: Single bulletin API endpoints
+// Description: Get, update, delete individual bulletin
 // ============================================================================
 
-import { NextRequest } from "next/server"
-import { eq, asc } from "drizzle-orm"
-import { requireAuth, requireRole } from "@/lib/auth"
-import {
-  successResponse,
-  serverErrorResponse,
-  notFoundResponse,
-  validationErrorResponse,
-  forbiddenResponse,
-} from "@/lib/api-response"
-import { z } from "zod"
+import { NextRequest, NextResponse } from "next/server"
+import { auth } from "@/lib/auth-config"
 import db from "@/db"
-import { bulletins, rundownRows, user, categories, desks } from "@/db/schema"
-import { recalculateRundownTiming, logActivity } from "@/lib/rundown-service"
+import { bulletins, rundownRows, user } from "@/db/schema"
+import { eq, asc } from "drizzle-orm"
+import { z } from "zod"
 
-const updateBulletinSchema = z.object({
-  title: z.string().min(1).max(255).optional(),
-  subtitle: z.string().max(255).nullable().optional(),
-  code: z.string().max(50).nullable().optional(),
-  airDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
-  startTime: z.string().regex(/^\d{2}:\d{2}$/).optional(),
-  endTime: z.string().regex(/^\d{2}:\d{2}$/).nullable().optional(),
-  plannedDurationSecs: z.number().int().positive().optional(),
-  status: z.enum(["PLANNING", "ACTIVE", "LOCKED", "ON_AIR", "COMPLETED", "ARCHIVED"]).optional(),
-  producerId: z.string().uuid().nullable().optional(),
-  deskId: z.string().uuid().nullable().optional(),
-  notes: z.string().max(5000).nullable().optional(),
-})
-
-interface RouteParams {
-  params: Promise<{ id: string }>
+// Helper to format duration
+function formatDuration(secs: number): string {
+  if (!secs) return "0:00"
+  const mins = Math.floor(secs / 60)
+  const seconds = Math.floor(secs % 60)
+  return `${mins}:${seconds.toString().padStart(2, "0")}`
 }
 
-/**
- * GET /api/bulletins/[id]
- * Get a single bulletin with its rows
- */
-export async function GET(request: NextRequest, { params }: RouteParams) {
-  try {
-    const authResult = await requireAuth(request)
-    if ("error" in authResult) return authResult.error
+// Helper to format time from seconds
+function formatTimeFromSecs(baseSecs: number): string {
+  const hours = Math.floor(baseSecs / 3600)
+  const mins = Math.floor((baseSecs % 3600) / 60)
+  return `${hours.toString().padStart(2, "0")}:${mins.toString().padStart(2, "0")}`
+}
 
+// GET - Get bulletin with rows
+export async function GET(
+  request: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  try {
     const { id } = await params
 
     // Get bulletin
     const [bulletin] = await db
-      .select({
-        id: bulletins.id,
-        title: bulletins.title,
-        subtitle: bulletins.subtitle,
-        code: bulletins.code,
-        airDate: bulletins.airDate,
-        startTime: bulletins.startTime,
-        endTime: bulletins.endTime,
-        plannedDurationSecs: bulletins.plannedDurationSecs,
-        totalEstDurationSecs: bulletins.totalEstDurationSecs,
-        totalActualDurationSecs: bulletins.totalActualDurationSecs,
-        totalCommercialSecs: bulletins.totalCommercialSecs,
-        timingVarianceSecs: bulletins.timingVarianceSecs,
-        status: bulletins.status,
-        isLocked: bulletins.isLocked,
-        lockedBy: bulletins.lockedBy,
-        lockedAt: bulletins.lockedAt,
-        producerId: bulletins.producerId,
-        producerName: user.name,
-        deskId: bulletins.deskId,
-        deskName: desks.name,
-        notes: bulletins.notes,
-        createdAt: bulletins.createdAt,
-        updatedAt: bulletins.updatedAt,
-      })
+      .select()
       .from(bulletins)
-      .leftJoin(user, eq(bulletins.producerId, user.id))
-      .leftJoin(desks, eq(bulletins.deskId, desks.id))
       .where(eq(bulletins.id, id))
       .limit(1)
 
     if (!bulletin) {
-      return notFoundResponse("Bulletin")
+      return NextResponse.json({ error: "Bulletin not found" }, { status: 404 })
     }
 
-    // Get rows with related data
-    const rows = await db
+    // Get rows with user names using left joins
+    const rowsWithUsers = await db
       .select({
+        // All row fields
         id: rundownRows.id,
+        bulletinId: rundownRows.bulletinId,
         pageCode: rundownRows.pageCode,
         blockCode: rundownRows.blockCode,
         pageNumber: rundownRows.pageNumber,
@@ -95,93 +57,130 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
         rowType: rundownRows.rowType,
         slug: rundownRows.slug,
         segment: rundownRows.segment,
+        storyProducerId: rundownRows.storyProducerId,
         reporterId: rundownRows.reporterId,
-        reporterName: user.name,
         categoryId: rundownRows.categoryId,
-        categoryName: categories.name,
-        categoryColor: categories.color,
+        finalApproval: rundownRows.finalApproval,
+        approvedBy: rundownRows.approvedBy,
+        approvedAt: rundownRows.approvedAt,
+        mosId: rundownRows.mosId,
+        mosObjSlug: rundownRows.mosObjSlug,
+        mosObjectTime: rundownRows.mosObjectTime,
+        mosStatus: rundownRows.mosStatus,
+        mosUserDuration: rundownRows.mosUserDuration,
         estDurationSecs: rundownRows.estDurationSecs,
         actualDurationSecs: rundownRows.actualDurationSecs,
         frontTimeSecs: rundownRows.frontTimeSecs,
         cumeTimeSecs: rundownRows.cumeTimeSecs,
         float: rundownRows.float,
+        breakNumber: rundownRows.breakNumber,
         status: rundownRows.status,
-        finalApproval: rundownRows.finalApproval,
+        script: rundownRows.script,
         notes: rundownRows.notes,
-        mosId: rundownRows.mosId,
-        mosObjSlug: rundownRows.mosObjSlug,
-        mosStatus: rundownRows.mosStatus,
+        sourcePoolStoryId: rundownRows.sourcePoolStoryId,
+        lastModifiedBy: rundownRows.lastModifiedBy,
+        createdBy: rundownRows.createdBy,
+        createdAt: rundownRows.createdAt,
+        updatedAt: rundownRows.updatedAt,
+        // Joined user names
+        lastModifiedByName: user.name,
       })
       .from(rundownRows)
-      .leftJoin(user, eq(rundownRows.reporterId, user.id))
-      .leftJoin(categories, eq(rundownRows.categoryId, categories.id))
+      .leftJoin(user, eq(rundownRows.lastModifiedBy, user.id))
       .where(eq(rundownRows.bulletinId, id))
       .orderBy(asc(rundownRows.sortOrder))
 
-    return successResponse({ bulletin, rows })
+    // Format rows with display fields
+    const formattedRows = rowsWithUsers.map((row) => ({
+      ...row,
+      estDurationDisplay: formatDuration(row.estDurationSecs),
+      actualDurationDisplay: row.actualDurationSecs 
+        ? formatDuration(row.actualDurationSecs) 
+        : "",
+      frontTimeDisplay: row.frontTimeSecs 
+        ? formatTimeFromSecs(row.frontTimeSecs) 
+        : "",
+      cumeTimeDisplay: formatDuration(row.cumeTimeSecs),
+      lastModifiedByName: row.lastModifiedByName || "SYSTEM",
+    }))
+
+    // Get producer name if exists
+    let producerName: string | undefined
+    if (bulletin.producerId) {
+      const [producer] = await db
+        .select({ name: user.name })
+        .from(user)
+        .where(eq(user.id, bulletin.producerId))
+        .limit(1)
+      producerName = producer?.name
+    }
+
+    return NextResponse.json({
+      bulletin: {
+        ...bulletin,
+        producerName,
+      },
+      rows: formattedRows,
+    })
   } catch (error) {
-    return serverErrorResponse(error)
+    console.error("Get bulletin error:", error)
+    return NextResponse.json(
+      { error: "Failed to get bulletin", details: String(error) },
+      { status: 500 }
+    )
   }
 }
 
-/**
- * PUT /api/bulletins/[id]
- * Update a bulletin
- */
-export async function PUT(request: NextRequest, { params }: RouteParams) {
+// PUT - Update bulletin
+export async function PUT(
+  request: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
   try {
-    const authResult = await requireRole(request, ["ADMIN", "PRODUCER"])
-    if ("error" in authResult) return authResult.error
+    const session = await auth.api.getSession({ headers: request.headers })
+    if (!session?.user) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+    }
 
-    const { user: currentUser } = authResult
     const { id } = await params
+    const body = await request.json()
 
-    // Check if bulletin exists and is not locked
+    // Check if bulletin exists
     const [existing] = await db
-      .select({
-        id: bulletins.id,
-        isLocked: bulletins.isLocked,
-        lockedBy: bulletins.lockedBy,
-      })
+      .select()
       .from(bulletins)
       .where(eq(bulletins.id, id))
       .limit(1)
 
     if (!existing) {
-      return notFoundResponse("Bulletin")
+      return NextResponse.json({ error: "Bulletin not found" }, { status: 404 })
     }
 
-    if (existing.isLocked && existing.lockedBy !== currentUser.id) {
-      return forbiddenResponse("Bulletin is locked by another user")
+    // Check if locked by another user
+    if (existing.isLocked && existing.lockedBy !== session.user.id) {
+      return NextResponse.json(
+        { error: "Bulletin is locked by another user" },
+        { status: 423 }
+      )
     }
 
-    const body = await request.json()
-    const validation = updateBulletinSchema.safeParse(body)
-
-    if (!validation.success) {
-      return validationErrorResponse(validation.error)
-    }
-
-    const data = validation.data
+    // Build update object
     const updateData: Record<string, unknown> = {}
+    
+    if (body.title !== undefined) updateData.title = body.title
+    if (body.subtitle !== undefined) updateData.subtitle = body.subtitle
+    if (body.code !== undefined) updateData.code = body.code
+    if (body.airDate !== undefined) updateData.airDate = new Date(body.airDate)
+    if (body.startTime !== undefined) updateData.startTime = body.startTime
+    if (body.endTime !== undefined) updateData.endTime = body.endTime
+    if (body.plannedDurationSecs !== undefined) updateData.plannedDurationSecs = body.plannedDurationSecs
+    if (body.status !== undefined) updateData.status = body.status
+    if (body.producerId !== undefined) updateData.producerId = body.producerId
+    if (body.deskId !== undefined) updateData.deskId = body.deskId
+    if (body.notes !== undefined) updateData.notes = body.notes
 
-    // Build update object with only provided fields
-    if (data.title !== undefined) updateData.title = data.title
-    if (data.subtitle !== undefined) updateData.subtitle = data.subtitle
-    if (data.code !== undefined) updateData.code = data.code
-    if (data.startTime !== undefined) updateData.startTime = data.startTime
-    if (data.endTime !== undefined) updateData.endTime = data.endTime
-    if (data.plannedDurationSecs !== undefined) updateData.plannedDurationSecs = data.plannedDurationSecs
-    if (data.status !== undefined) updateData.status = data.status
-    if (data.producerId !== undefined) updateData.producerId = data.producerId
-    if (data.deskId !== undefined) updateData.deskId = data.deskId
-    if (data.notes !== undefined) updateData.notes = data.notes
-
-    // Handle airDate + startTime
-    if (data.airDate && data.startTime) {
-      updateData.airDate = new Date(`${data.airDate}T${data.startTime}:00`)
-    } else if (data.airDate) {
-      updateData.airDate = new Date(data.airDate)
+    if (Object.keys(updateData).length === 0) {
+      return NextResponse.json({ error: "No fields to update" }, { status: 400 })
     }
 
     const [updated] = await db
@@ -190,56 +189,57 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
       .where(eq(bulletins.id, id))
       .returning()
 
-    // Recalculate timing if duration changed
-    if (data.plannedDurationSecs !== undefined || data.startTime !== undefined) {
-      await recalculateRundownTiming(id)
-    }
-
-    // Log activity
-    await logActivity(currentUser.id, "UPDATE", "BULLETIN", id, {
-      bulletinId: id,
-      description: "Updated bulletin",
-      newValue: data,
-    })
-
-    return successResponse(updated, "Bulletin updated successfully")
+    return NextResponse.json({ bulletin: updated })
   } catch (error) {
-    return serverErrorResponse(error)
+    console.error("Update bulletin error:", error)
+    return NextResponse.json(
+      { error: "Failed to update bulletin", details: String(error) },
+      { status: 500 }
+    )
   }
 }
 
-/**
- * DELETE /api/bulletins/[id]
- * Delete a bulletin
- */
-export async function DELETE(request: NextRequest, { params }: RouteParams) {
+// DELETE - Delete bulletin
+export async function DELETE(
+  request: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
   try {
-    const authResult = await requireRole(request, ["ADMIN"])
-    if ("error" in authResult) return authResult.error
+    const session = await auth.api.getSession({ headers: request.headers })
+    if (!session?.user) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+    }
 
-    const { user: currentUser } = authResult
     const { id } = await params
 
+    // Check if bulletin exists
     const [existing] = await db
-      .select({ id: bulletins.id, title: bulletins.title })
+      .select()
       .from(bulletins)
       .where(eq(bulletins.id, id))
       .limit(1)
 
     if (!existing) {
-      return notFoundResponse("Bulletin")
+      return NextResponse.json({ error: "Bulletin not found" }, { status: 404 })
     }
 
-    // Delete bulletin (cascade will delete rows)
+    // Check if locked
+    if (existing.isLocked) {
+      return NextResponse.json(
+        { error: "Cannot delete locked bulletin" },
+        { status: 423 }
+      )
+    }
+
+    // Delete (rows will cascade)
     await db.delete(bulletins).where(eq(bulletins.id, id))
 
-    // Log activity
-    await logActivity(currentUser.id, "DELETE", "BULLETIN", id, {
-      description: `Deleted bulletin: ${existing.title}`,
-    })
-
-    return successResponse({ deleted: true }, "Bulletin deleted successfully")
+    return NextResponse.json({ id, message: "Bulletin deleted" })
   } catch (error) {
-    return serverErrorResponse(error)
+    console.error("Delete bulletin error:", error)
+    return NextResponse.json(
+      { error: "Failed to delete bulletin", details: String(error) },
+      { status: 500 }
+    )
   }
 }

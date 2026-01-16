@@ -2456,3 +2456,78 @@
   border-color: #2ecc71;
   box-shadow: 0 0 0 2px rgba(52, 152, 219, 0.3);
 }
+
+
+/* ─── Drag and Drop Styles ─────────────────────────────────────── */
+
+.drag-col {
+  width: 30px;
+  min-width: 30px;
+  max-width: 30px;
+}
+
+.drag-handle {
+  width: 30px;
+  min-width: 30px;
+  max-width: 30px;
+  padding: 4px !important;
+  cursor: grab;
+  color: #7f8c8d;
+  text-align: center;
+  vertical-align: middle;
+  transition: color 0.2s, background 0.2s;
+}
+
+.drag-handle:hover {
+  color: #3498db;
+  background: rgba(52, 152, 219, 0.1);
+}
+
+.drag-handle:active {
+  cursor: grabbing;
+}
+
+.rundown-row.dragging {
+  opacity: 0.5;
+  background: rgba(52, 152, 219, 0.1) !important;
+}
+
+.rundown-row.dragging-overlay {
+  background: #2c3e50;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.4);
+  border: 2px solid #3498db;
+}
+
+.drag-overlay-table {
+  width: 100%;
+  background: #1a1a2e;
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.drag-overlay-table .rundown-row {
+  background: #2c3e50;
+}
+
+/* Reorder indicator */
+.reorder-indicator {
+  font-size: 12px;
+  color: #f39c12;
+  margin-left: 12px;
+  animation: pulse 1s infinite;
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+
+/* Prevent text selection while dragging */
+.enps-rundown-table {
+  user-select: none;
+}
+
+.slug-edit-input,
+.segment-edit-input {
+  user-select: text;
+}

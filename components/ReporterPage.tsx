@@ -1,124 +1,49 @@
 "use client"
 
-import { useEffect, useState, useMemo, useRef } from "react"
+import { useEffect, useState, useMemo, useCallback } from "react"
 import { useQuery, useQueryClient, useMutation } from "@tanstack/react-query"
-import { Plus, Zap, Trash2 } from "lucide-react"
+import { Plus, Zap } from "lucide-react"
+import { DragEndEvent, DragStartEvent } from "@dnd-kit/core"
+import { arrayMove } from "@dnd-kit/sortable"
 
-import api, { Bulletin, RundownRow, Category, Segment } from "@/lib/api-client"
-import Navbar from "./Navbar"
-import BulletinCreateModal from "./BulletinCreateModal"
+import api, { Segment } from "@/lib/api-client"
+import Navbar from "@/components/Navbar"
+import BulletinCreateModal from "@/components/BulletinCreateModal"
+import { createPlaceholderSegment, formatDuration } from "@/types/helpers"
+import { RundownDisplayItem } from "@/types/reporter"
+import BulletinsSidebar from "./reporter/BulletinsSidebar"
+import RundownTable from "./reporter/RundownTable"
+import DescriptionPanel from "./reporter/DescriptionPanel"
 
-// ────────────────────────────────────────────────────────────────
-// Types
-// ────────────────────────────────────────────────────────────────
-
-type SegmentType = Segment["type"]
-
-interface RundownDisplayItem {
-  id: string
-  page: string
-  slug: string
-  segments: Segment[]
-  storyProduc: string
-  finalAppr: string
-  float: string
-  estDuration: string
-  actual: string
-  front: string
-  cume: string
-  lastModBy: string
-  categoryId: string
-  status: string
-  script?: string
-  notes?: string
-  rowType: string
-}
-
-// ────────────────────────────────────────────────────────────────
-// Helper Functions
-// ────────────────────────────────────────────────────────────────
-
-function formatDuration(secs: number): string {
-  if (!secs) return "0:00"
-  const mins = Math.floor(secs / 60)
-  const seconds = Math.floor(secs % 60)
-  return `${mins}:${seconds.toString().padStart(2, "0")}`
-}
-
-function getSegmentClass(seg: string) {
-  const s = seg.toUpperCase()
-  if (s === "LIVE") return "segment-live"
-  if (s === "SOT" || s === "VOSOT") return "segment-sot"
-  if (s === "PKG") return "segment-pkg"
-  if (s.includes("IV") || s === "INTRO") return "segment-iv"
-  if (s === "VO") return "segment-vo"
-  if (s === "READER") return "segment-reader"
-  if (s === "GRAPHIC") return "segment-graphic"
-  if (s === "WEATHER") return "segment-weather"
-  if (s === "SPORTS") return "segment-sports"
-  if (s === "PHONER") return "segment-phoner"
-  return ""
-}
-
-function getBulletinStatusClass(status: string) {
-  return `status-${status.toLowerCase().replace("_", "-")}`
-}
-
-// Helper to create a placeholder segment
-function createPlaceholderSegment(rowId: string, name: string, description: string = ""): Segment {
-  const validTypes: SegmentType[] = ["LIVE", "PKG", "VO", "VOSOT", "SOT", "READER", "GRAPHIC", "VT", "IV", "PHONER", "WEATHER", "SPORTS"]
-  const upperName = name.toUpperCase()
-  const segmentType: SegmentType = validTypes.includes(upperName as SegmentType) 
-    ? (upperName as SegmentType) 
-    : "LIVE"
-
-  return {
-    id: `temp-${rowId}`,
-    rowId,
-    name: upperName || "LIVE",
-    type: segmentType,
-    description,
-    estDurationSecs: 0,
-    sortOrder: 0,
-    createdAt: "",
-    updatedAt: "",
-  }
-}
-
-// ────────────────────────────────────────────────────────────────
-// Main Component
-// ────────────────────────────────────────────────────────────────
-
-const ReporterPage: React.FC = () => {
+export default function ReporterPage() {
   const queryClient = useQueryClient()
-  
-  // Selection state
+
+  // ─── Selection State ────────────────────────────────────────────
   const [selectedBulletin, setSelectedBulletin] = useState<string | null>(null)
   const [selectedItemId, setSelectedItemId] = useState<string | null>(null)
   const [selectedSegmentId, setSelectedSegmentId] = useState<string | null>(null)
-  
-  // Edit state
+
+  // ─── Edit State ─────────────────────────────────────────────────
   const [editDescription, setEditDescription] = useState("")
   const [selectedCategoryId, setSelectedCategoryId] = useState<string>()
-  
-  // UI state
+
+  // ─── UI State ───────────────────────────────────────────────────
   const [isSaving, setIsSaving] = useState(false)
   const [saveMessage, setSaveMessage] = useState("")
   const [autoSaveTimeout, setAutoSaveTimeout] = useState<NodeJS.Timeout | null>(null)
   const [showBulletinModal, setShowBulletinModal] = useState(false)
 
-  // Inline segment editing
+  // ─── Inline Editing State ───────────────────────────────────────
   const [editingSegmentId, setEditingSegmentId] = useState<string | null>(null)
   const [tempSegmentValue, setTempSegmentValue] = useState("")
   const [addingSegmentForRowId, setAddingSegmentForRowId] = useState<string | null>(null)
-  const segmentInputRef = useRef<HTMLInputElement>(null)
-
-  // Inline slug editing
   const [editingSlugRowId, setEditingSlugRowId] = useState<string | null>(null)
   const [tempSlugValue, setTempSlugValue] = useState("")
-  const slugInputRef = useRef<HTMLInputElement>(null)
 
-  // ─── Queries ─────────────────────────────────────────────────────
+  // ─── Drag State ─────────────────────────────────────────────────
+  const [activeId, setActiveId] = useState<string | null>(null)
+
+  // ─── Queries ────────────────────────────────────────────────────
 
   const { data: bulletinsData, isLoading: bulletinsLoading } = useQuery({
     queryKey: ["bulletins", "today"],
@@ -136,13 +61,12 @@ const ReporterPage: React.FC = () => {
   const currentBulletin = bulletinData?.bulletin
   const rows = bulletinData?.rows || []
 
-  // Fetch segments for all rows
   const { data: segmentsData } = useQuery({
     queryKey: ["bulletin-segments", selectedBulletin, rows.length],
     queryFn: async () => {
       if (!rows.length) return {}
       const segmentsByRow: Record<string, Segment[]> = {}
-      
+
       await Promise.all(
         rows.map(async (row) => {
           try {
@@ -150,7 +74,7 @@ const ReporterPage: React.FC = () => {
             segmentsByRow[row.id] = result.segments
           } catch {
             segmentsByRow[row.id] = [
-              createPlaceholderSegment(row.id, row.segment || "LIVE", row.notes || "")
+              createPlaceholderSegment(row.id, row.segment || "LIVE", row.notes || ""),
             ]
           }
         })
@@ -169,7 +93,7 @@ const ReporterPage: React.FC = () => {
 
   const categories = categoriesData?.categories || []
 
-  // ─── Mutations ───────────────────────────────────────────────────
+  // ─── Mutations ──────────────────────────────────────────────────
 
   const autoGenerateMutation = useMutation({
     mutationFn: async () => {
@@ -190,6 +114,17 @@ const ReporterPage: React.FC = () => {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["bulletin", selectedBulletin] })
     },
+  })
+
+  const reorderRowsMutation = useMutation({
+    mutationFn: async (rowsData: Array<{ id: string; sortOrder: number; pageCode?: string; blockCode?: string }>) => {
+      return api.rows.reorder(selectedBulletin!, rowsData)
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["bulletin", selectedBulletin] })
+      showMessage("Rows reordered")
+    },
+    onError: () => showMessage("Failed to reorder rows"),
   })
 
   const createRowMutation = useMutation({
@@ -242,15 +177,16 @@ const ReporterPage: React.FC = () => {
     onError: (error: Error) => showMessage(error.message || "Failed to delete segment"),
   })
 
-  // ─── Convert rows to display items ──────────────────────────────
+  // ─── Computed Values ────────────────────────────────────────────
 
   const rundownItems = useMemo<RundownDisplayItem[]>(() => {
     return rows.map((row, index) => {
       const segments = segmentsByRow[row.id] || []
-      
-      const displaySegments: Segment[] = segments.length > 0 
-        ? segments 
-        : [createPlaceholderSegment(row.id, row.segment || "LIVE", row.notes || "")]
+
+      const displaySegments: Segment[] =
+        segments.length > 0
+          ? segments
+          : [createPlaceholderSegment(row.id, row.segment || "LIVE", row.notes || "")]
 
       return {
         id: row.id,
@@ -270,6 +206,8 @@ const ReporterPage: React.FC = () => {
         script: row.script,
         notes: row.notes,
         rowType: row.rowType,
+        blockCode: row.blockCode,
+        sortOrder: row.sortOrder,
       }
     })
   }, [rows, segmentsByRow])
@@ -277,7 +215,7 @@ const ReporterPage: React.FC = () => {
   const selectedItem = rundownItems.find((item) => item.id === selectedItemId)
   const selectedSegment = selectedItem?.segments.find((s) => s.id === selectedSegmentId)
 
-  // ─── Auto-select effects ─────────────────────────────────────────
+  // ─── Effects ────────────────────────────────────────────────────
 
   useEffect(() => {
     if (bulletins.length > 0 && !selectedBulletin) {
@@ -302,61 +240,218 @@ const ReporterPage: React.FC = () => {
     }
   }, [selectedSegment, selectedItem, categories])
 
-  useEffect(() => {
-    if ((editingSegmentId || addingSegmentForRowId) && segmentInputRef.current) {
-      segmentInputRef.current.focus()
-    }
-  }, [editingSegmentId, addingSegmentForRowId])
+  // ─── Helpers ────────────────────────────────────────────────────
 
-  // Focus slug input when editing
-  useEffect(() => {
-    if (editingSlugRowId && slugInputRef.current) {
-      slugInputRef.current.focus()
-      slugInputRef.current.select()
-    }
-  }, [editingSlugRowId])
-
-  // ─── Helper Functions ──────────────────────────────────────────
-
-  const showMessage = (msg: string) => {
+  const showMessage = useCallback((msg: string) => {
     setSaveMessage(msg)
     setTimeout(() => setSaveMessage(""), 3000)
-  }
+  }, [])
 
   // ─── Handlers ───────────────────────────────────────────────────
 
-  const handleSegmentClick = (itemId: string, segment: Segment) => {
+  const handleSelectBulletin = useCallback((id: string) => {
+    setSelectedBulletin(id)
+    setSelectedItemId(null)
+    setSelectedSegmentId(null)
+  }, [])
+
+  const handleDragStart = useCallback((event: DragStartEvent) => {
+    setActiveId(event.active.id as string)
+  }, [])
+
+  const handleDragEnd = useCallback(
+    (event: DragEndEvent) => {
+      const { active, over } = event
+      setActiveId(null)
+
+      if (!over || active.id === over.id) return
+
+      const oldIndex = rundownItems.findIndex((item) => item.id === active.id)
+      const newIndex = rundownItems.findIndex((item) => item.id === over.id)
+
+      if (oldIndex === -1 || newIndex === -1) return
+
+      const reorderedItems = arrayMove(rundownItems, oldIndex, newIndex)
+
+      const rowsToUpdate = reorderedItems.map((item, index) => {
+        const blockCode = item.blockCode
+        let pageNumber = 1
+        for (let i = 0; i < index; i++) {
+          if (reorderedItems[i].blockCode === blockCode) {
+            pageNumber++
+          }
+        }
+        const pageCode = `${blockCode}${pageNumber}`
+
+        return {
+          id: item.id,
+          sortOrder: index,
+          pageCode,
+          blockCode,
+        }
+      })
+
+      reorderRowsMutation.mutate(rowsToUpdate)
+    },
+    [rundownItems, reorderRowsMutation]
+  )
+
+  const handleRowClick = useCallback((item: RundownDisplayItem) => {
+    setSelectedItemId(item.id)
+    if (item.segments.length > 0) {
+      setSelectedSegmentId(item.segments[0].id)
+    }
+  }, [])
+
+  const handleSegmentClick = useCallback((itemId: string, segment: Segment) => {
     setSelectedItemId(itemId)
     setSelectedSegmentId(segment.id)
-  }
+  }, [])
 
-  const handleDescriptionChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
-    if (!selectedSegmentId || selectedSegmentId.startsWith("temp-")) return
+  // Slug editing
+  const handleSlugDoubleClick = useCallback((rowId: string, slug: string) => {
+    setEditingSlugRowId(rowId)
+    setTempSlugValue(slug)
+  }, [])
 
-    const newDescription = e.target.value
-    setEditDescription(newDescription)
+  const handleSlugSave = useCallback(async () => {
+    if (!editingSlugRowId) {
+      setEditingSlugRowId(null)
+      setTempSlugValue("")
+      return
+    }
 
-    if (autoSaveTimeout) clearTimeout(autoSaveTimeout)
-    setIsSaving(true)
+    const trimmedSlug = tempSlugValue.trim()
+    if (!trimmedSlug) {
+      showMessage("Slug cannot be empty")
+      setEditingSlugRowId(null)
+      setTempSlugValue("")
+      return
+    }
 
-    const timeout = setTimeout(async () => {
-      try {
-        await updateSegmentMutation.mutateAsync({
-          id: selectedSegmentId,
-          data: { description: newDescription },
-        })
-        showMessage("Description saved")
-        setIsSaving(false)
-      } catch {
-        showMessage("Failed to save")
-        setIsSaving(false)
+    try {
+      await updateRowMutation.mutateAsync({
+        id: editingSlugRowId,
+        data: { slug: trimmedSlug.toUpperCase() },
+      })
+      showMessage("Slug updated")
+    } catch {
+      showMessage("Failed to update slug")
+    }
+
+    setEditingSlugRowId(null)
+    setTempSlugValue("")
+  }, [editingSlugRowId, tempSlugValue, updateRowMutation, showMessage])
+
+  const handleSlugCancel = useCallback(() => {
+    setEditingSlugRowId(null)
+    setTempSlugValue("")
+  }, [])
+
+  // Segment editing
+  const handleSegmentDoubleClick = useCallback((segment: Segment) => {
+    if (segment.id.startsWith("temp-")) return
+    setEditingSegmentId(segment.id)
+    setTempSegmentValue(segment.name)
+  }, [])
+
+  const handleSegmentSave = useCallback(async () => {
+    if (!editingSegmentId || !tempSegmentValue.trim()) {
+      setEditingSegmentId(null)
+      setAddingSegmentForRowId(null)
+      setTempSegmentValue("")
+      return
+    }
+
+    try {
+      await updateSegmentMutation.mutateAsync({
+        id: editingSegmentId,
+        data: { name: tempSegmentValue.toUpperCase() },
+      })
+      showMessage("Segment updated")
+    } catch {
+      showMessage("Failed to update segment")
+    }
+
+    setEditingSegmentId(null)
+    setAddingSegmentForRowId(null)
+    setTempSegmentValue("")
+  }, [editingSegmentId, tempSegmentValue, updateSegmentMutation, showMessage])
+
+  const handleSegmentSaveNew = useCallback(
+    async (rowId: string) => {
+      if (!tempSegmentValue.trim()) {
+        setEditingSegmentId(null)
+        setAddingSegmentForRowId(null)
+        setTempSegmentValue("")
+        return
       }
-    }, 1000)
 
-    setAutoSaveTimeout(timeout)
-  }
+      createSegmentMutation.mutate({
+        rowId,
+        data: {
+          name: tempSegmentValue.toUpperCase(),
+          description: "",
+        },
+      })
 
-  const handleManualSave = async () => {
+      setEditingSegmentId(null)
+      setAddingSegmentForRowId(null)
+      setTempSegmentValue("")
+    },
+    [tempSegmentValue, createSegmentMutation]
+  )
+
+  const handleSegmentCancel = useCallback(() => {
+    setEditingSegmentId(null)
+    setAddingSegmentForRowId(null)
+    setTempSegmentValue("")
+  }, [])
+
+  const handleAddSegment = useCallback((rowId: string) => {
+    setAddingSegmentForRowId(rowId)
+    setTempSegmentValue("")
+  }, [])
+
+  const handleDeleteSegment = useCallback(
+    (segment: Segment) => {
+      if (segment.id.startsWith("temp-")) return
+      deleteSegmentMutation.mutate(segment.id)
+    },
+    [deleteSegmentMutation]
+  )
+
+  // Description panel
+  const handleDescriptionChange = useCallback(
+    (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+      if (!selectedSegmentId || selectedSegmentId.startsWith("temp-")) return
+
+      const newDescription = e.target.value
+      setEditDescription(newDescription)
+
+      if (autoSaveTimeout) clearTimeout(autoSaveTimeout)
+      setIsSaving(true)
+
+      const timeout = setTimeout(async () => {
+        try {
+          await updateSegmentMutation.mutateAsync({
+            id: selectedSegmentId,
+            data: { description: newDescription },
+          })
+          showMessage("Description saved")
+          setIsSaving(false)
+        } catch {
+          showMessage("Failed to save")
+          setIsSaving(false)
+        }
+      }, 1000)
+
+      setAutoSaveTimeout(timeout)
+    },
+    [selectedSegmentId, autoSaveTimeout, updateSegmentMutation, showMessage]
+  )
+
+  const handleManualSave = useCallback(async () => {
     if (!selectedSegmentId || selectedSegmentId.startsWith("temp-")) return
 
     try {
@@ -371,24 +466,32 @@ const ReporterPage: React.FC = () => {
       showMessage("Failed to save")
       setIsSaving(false)
     }
-  }
+  }, [selectedSegmentId, editDescription, updateSegmentMutation, showMessage])
 
-  const handleCategoryChange = async (categoryId: string) => {
-    if (!selectedItemId) return
+  const handleCategoryChange = useCallback(
+    async (categoryId: string) => {
+      if (!selectedItemId) return
 
-    setSelectedCategoryId(categoryId)
-    try {
-      await updateRowMutation.mutateAsync({
-        id: selectedItemId,
-        data: { categoryId: categoryId || null },
-      })
-      showMessage("Category updated")
-    } catch {
-      showMessage("Failed to update category")
-    }
-  }
+      setSelectedCategoryId(categoryId)
+      try {
+        await updateRowMutation.mutateAsync({
+          id: selectedItemId,
+          data: { categoryId: categoryId || null },
+        })
+        showMessage("Category updated")
+      } catch {
+        showMessage("Failed to update category")
+      }
+    },
+    [selectedItemId, updateRowMutation, showMessage]
+  )
 
-  const addNewStory = () => {
+  const handleClosePanel = useCallback(() => {
+    setSelectedItemId(null)
+    setSelectedSegmentId(null)
+  }, [])
+
+  const addNewStory = useCallback(() => {
     if (!selectedBulletin) return
 
     const lastRow = rows[rows.length - 1]
@@ -401,105 +504,7 @@ const ReporterPage: React.FC = () => {
       segment: "LIVE",
       status: "BLANK",
     })
-  }
-
-  // ─── Inline Segment Editing ─────────────────────────────────────
-
-  const startSegmentEdit = (segment: Segment) => {
-    if (segment.id.startsWith("temp-")) return
-    setEditingSegmentId(segment.id)
-    setTempSegmentValue(segment.name)
-  }
-
-  const startAddingSegment = (rowId: string) => {
-    setAddingSegmentForRowId(rowId)
-    setTempSegmentValue("")
-  }
-
-  const saveSegmentEdit = async () => {
-    if (!editingSegmentId || !tempSegmentValue.trim()) {
-      cancelSegmentEdit()
-      return
-    }
-
-    try {
-      await updateSegmentMutation.mutateAsync({
-        id: editingSegmentId,
-        data: { name: tempSegmentValue.toUpperCase() },
-      })
-      showMessage("Segment updated")
-    } catch {
-      showMessage("Failed to update segment")
-    }
-
-    cancelSegmentEdit()
-  }
-
-  const saveNewSegment = async (rowId: string) => {
-    if (!tempSegmentValue.trim()) {
-      cancelSegmentEdit()
-      return
-    }
-
-    createSegmentMutation.mutate({
-      rowId,
-      data: { 
-        name: tempSegmentValue.toUpperCase(),
-        description: ""
-      },
-    })
-
-    cancelSegmentEdit()
-  }
-
-  const deleteSegment = (segment: Segment) => {
-    if (segment.id.startsWith("temp-")) return
-    deleteSegmentMutation.mutate(segment.id)
-  }
-
-  const cancelSegmentEdit = () => {
-    setEditingSegmentId(null)
-    setAddingSegmentForRowId(null)
-    setTempSegmentValue("")
-  }
-
-  // ─── Inline Slug Editing ────────────────────────────────────────
-
-  const startSlugEdit = (rowId: string, currentSlug: string) => {
-    setEditingSlugRowId(rowId)
-    setTempSlugValue(currentSlug)
-  }
-
-  const saveSlugEdit = async () => {
-    if (!editingSlugRowId) {
-      cancelSlugEdit()
-      return
-    }
-
-    const trimmedSlug = tempSlugValue.trim()
-    if (!trimmedSlug) {
-      showMessage("Slug cannot be empty")
-      cancelSlugEdit()
-      return
-    }
-
-    try {
-      await updateRowMutation.mutateAsync({
-        id: editingSlugRowId,
-        data: { slug: trimmedSlug.toUpperCase() },
-      })
-      showMessage("Slug updated")
-    } catch {
-      showMessage("Failed to update slug")
-    }
-
-    cancelSlugEdit()
-  }
-
-  const cancelSlugEdit = () => {
-    setEditingSlugRowId(null)
-    setTempSlugValue("")
-  }
+  }, [selectedBulletin, rows, createRowMutation])
 
   // ─── Render ─────────────────────────────────────────────────────
 
@@ -523,10 +528,7 @@ const ReporterPage: React.FC = () => {
               <Zap size={16} />
               <span>{autoGenerateMutation.isPending ? "Generating..." : "Auto-Generate"}</span>
             </button>
-            <button
-              className="btn-create-bulletin"
-              onClick={() => setShowBulletinModal(true)}
-            >
+            <button className="btn-create-bulletin" onClick={() => setShowBulletinModal(true)}>
               <Plus size={16} />
               <span>New Bulletin</span>
             </button>
@@ -545,232 +547,47 @@ const ReporterPage: React.FC = () => {
 
         <div className="main-layout">
           {/* Bulletins Sidebar */}
-          <div className="bulletins-panel">
-            <div className="panel-header">Today&apos;s Bulletins</div>
-            <div className="bulletins-list">
-              {bulletinsLoading ? (
-                <div className="empty-bulletins">Loading...</div>
-              ) : bulletins.length === 0 ? (
-                <div className="empty-bulletins">No bulletins for today</div>
-              ) : (
-                bulletins.map((b: Bulletin) => (
-                  <div
-                    key={b.id}
-                    className={`bulletin-item ${selectedBulletin === b.id ? "active" : ""}`}
-                    onClick={() => {
-                      setSelectedBulletin(b.id)
-                      setSelectedItemId(null)
-                      setSelectedSegmentId(null)
-                    }}
-                  >
-                    <div className="bulletin-title">{b.title}</div>
-                    <div className="bulletin-meta">
-                      <span className="bulletin-time">{b.startTime}</span>
-                      <span className={`bulletin-status ${getBulletinStatusClass(b.status)}`}>
-                        {b.status}
-                      </span>
-                    </div>
-                    <div className="bulletin-stats">
-                      {b.storyCount || 0} stories • {b.progress || 0}% ready
-                    </div>
-                  </div>
-                ))
-              )}
-            </div>
-          </div>
+          <BulletinsSidebar
+            bulletins={bulletins}
+            isLoading={bulletinsLoading}
+            selectedBulletinId={selectedBulletin}
+            onSelectBulletin={handleSelectBulletin}
+          />
 
           {/* Main Rundown Area */}
           <div className="rundown-scroll-wrapper">
             <div className="rundown-header">
               <div className="rundown-title">{bulletinHeader}</div>
+              {reorderRowsMutation.isPending && <span className="reorder-indicator">Saving order...</span>}
             </div>
 
-            <div className="table-container">
-              <table className="enps-rundown-table">
-                <thead>
-                  <tr>
-                    <th>Pg</th>
-                    <th>Story Slug</th>
-                    <th>Segments</th>
-                    <th>Story Produc</th>
-                    <th>Final Appr</th>
-                    <th>Float</th>
-                    <th>Est Duration</th>
-                    <th>Actual</th>
-                    <th>Front</th>
-                    <th>Cume</th>
-                    <th>Last Mod By</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {rowsLoading ? (
-                    <tr>
-                      <td colSpan={11} className="empty-row">Loading stories...</td>
-                    </tr>
-                  ) : rundownItems.length === 0 ? (
-                    <tr>
-                      <td colSpan={11} className="empty-row">No stories in this bulletin yet</td>
-                    </tr>
-                  ) : (
-                    rundownItems.map((item) => (
-                      <tr
-                        key={item.id}
-                        className={`rundown-row ${selectedItemId === item.id ? "selected" : ""} ${
-                          item.finalAppr ? "approved" : ""
-                        }`}
-                        onClick={() => {
-                          setSelectedItemId(item.id)
-                          if (item.segments.length > 0) {
-                            setSelectedSegmentId(item.segments[0].id)
-                          }
-                        }}
-                      >
-                        <td className="pg">{item.page}</td>
-                        
-                        {/* Editable Slug Cell */}
-                        <td 
-                          className="slug"
-                          onDoubleClick={(e) => {
-                            e.stopPropagation()
-                            startSlugEdit(item.id, item.slug)
-                          }}
-                          title="Double-click to edit"
-                        >
-                          {editingSlugRowId === item.id ? (
-                            <input
-                              ref={slugInputRef}
-                              type="text"
-                              value={tempSlugValue}
-                              onChange={(e) => setTempSlugValue(e.target.value.toUpperCase())}
-                              onKeyDown={(e) => {
-                                if (e.key === "Enter") {
-                                  e.preventDefault()
-                                  saveSlugEdit()
-                                } else if (e.key === "Escape") {
-                                  cancelSlugEdit()
-                                }
-                              }}
-                              onBlur={saveSlugEdit}
-                              className="slug-edit-input"
-                              onClick={(e) => e.stopPropagation()}
-                            />
-                          ) : (
-                            <span className="slug-text">{item.slug || "(empty)"}</span>
-                          )}
-                        </td>
-
-                        {/* Multiple Segments */}
-                        <td className="segment-cell">
-                          <div className="segments-container">
-                            {item.segments.map((seg) => (
-                              <div key={seg.id} className="segment-item">
-                                {editingSegmentId === seg.id ? (
-                                  <input
-                                    ref={segmentInputRef}
-                                    type="text"
-                                    value={tempSegmentValue}
-                                    onChange={(e) => setTempSegmentValue(e.target.value.toUpperCase())}
-                                    onKeyDown={(e) => {
-                                      if (e.key === "Enter") {
-                                        e.preventDefault()
-                                        saveSegmentEdit()
-                                      } else if (e.key === "Escape") {
-                                        cancelSegmentEdit()
-                                      }
-                                    }}
-                                    onBlur={saveSegmentEdit}
-                                    className="segment-edit-input"
-                                    maxLength={12}
-                                  />
-                                ) : (
-                                  <>
-                                    <span
-                                      className={`segment-tag ${getSegmentClass(seg.name)} ${
-                                        selectedSegmentId === seg.id ? "segment-active" : ""
-                                      }`}
-                                      onClick={(e) => {
-                                        e.stopPropagation()
-                                        handleSegmentClick(item.id, seg)
-                                      }}
-                                      onDoubleClick={(e) => {
-                                        e.stopPropagation()
-                                        startSegmentEdit(seg)
-                                      }}
-                                      title={seg.description || "Double-click to edit name"}
-                                    >
-                                      {seg.name}
-                                      {seg.description && (
-                                        <span className="segment-has-desc">•</span>
-                                      )}
-                                    </span>
-                                    {item.segments.length > 1 && !seg.id.startsWith("temp-") && (
-                                      <button
-                                        className="segment-delete-btn"
-                                        onClick={(e) => {
-                                          e.stopPropagation()
-                                          deleteSegment(seg)
-                                        }}
-                                        title="Delete segment"
-                                      >
-                                        ×
-                                      </button>
-                                    )}
-                                  </>
-                                )}
-                              </div>
-                            ))}
-
-                            {/* Add New Segment Input */}
-                            {addingSegmentForRowId === item.id ? (
-                              <div className="segment-item">
-                                <input
-                                  ref={segmentInputRef}
-                                  type="text"
-                                  value={tempSegmentValue}
-                                  onChange={(e) => setTempSegmentValue(e.target.value.toUpperCase())}
-                                  onKeyDown={(e) => {
-                                    if (e.key === "Enter") {
-                                      e.preventDefault()
-                                      saveNewSegment(item.id)
-                                    } else if (e.key === "Escape") {
-                                      cancelSegmentEdit()
-                                    }
-                                  }}
-                                  onBlur={() => saveNewSegment(item.id)}
-                                  className="segment-edit-input"
-                                  maxLength={12}
-                                  placeholder="TYPE..."
-                                />
-                              </div>
-                            ) : (
-                              <button
-                                className="segment-add-btn"
-                                onClick={(e) => {
-                                  e.stopPropagation()
-                                  startAddingSegment(item.id)
-                                }}
-                                title="Add segment"
-                              >
-                                +
-                              </button>
-                            )}
-                          </div>
-                        </td>
-
-                        <td className="story-produc">{item.storyProduc}</td>
-                        <td className="approved">{item.finalAppr}</td>
-                        <td className="float">{item.float}</td>
-                        <td className="duration">{item.estDuration}</td>
-                        <td className="duration">{item.actual}</td>
-                        <td className="front">{item.front}</td>
-                        <td className="cume">{item.cume}</td>
-                        <td className="mod-by">{item.lastModBy}</td>
-                      </tr>
-                    ))
-                  )}
-                </tbody>
-              </table>
-            </div>
+            <RundownTable
+              items={rundownItems}
+              isLoading={rowsLoading}
+              selectedItemId={selectedItemId}
+              selectedSegmentId={selectedSegmentId}
+              activeId={activeId}
+              editingSlugRowId={editingSlugRowId}
+              tempSlugValue={tempSlugValue}
+              editingSegmentId={editingSegmentId}
+              tempSegmentValue={tempSegmentValue}
+              addingSegmentForRowId={addingSegmentForRowId}
+              onDragStart={handleDragStart}
+              onDragEnd={handleDragEnd}
+              onRowClick={handleRowClick}
+              onSlugDoubleClick={handleSlugDoubleClick}
+              onSlugChange={setTempSlugValue}
+              onSlugSave={handleSlugSave}
+              onSlugCancel={handleSlugCancel}
+              onSegmentClick={handleSegmentClick}
+              onSegmentDoubleClick={handleSegmentDoubleClick}
+              onSegmentChange={setTempSegmentValue}
+              onSegmentSave={handleSegmentSave}
+              onSegmentSaveNew={handleSegmentSaveNew}
+              onSegmentCancel={handleSegmentCancel}
+              onSegmentDelete={handleDeleteSegment}
+              onAddSegment={handleAddSegment}
+            />
 
             {/* Add Story Button */}
             <button
@@ -798,129 +615,28 @@ const ReporterPage: React.FC = () => {
 
           {/* Right Description Panel */}
           {selectedItem && selectedSegment && (
-            <div className="description-panel">
-              <div className="panel-header">
-                <div className="panel-title">
-                  {selectedItem.slug} - {selectedSegment.name}
-                </div>
-                <button className="close-btn" onClick={() => {
-                  setSelectedItemId(null)
-                  setSelectedSegmentId(null)
-                }}>
-                  ×
-                </button>
-              </div>
-
-              <div className="panel-content">
-                {/* Save Status */}
-                {saveMessage && (
-                  <div className={`save-message ${isSaving ? "saving" : "saved"}`}>
-                    {isSaving ? "Saving..." : saveMessage}
-                  </div>
-                )}
-
-                {/* Segment Selector */}
-                <div className="field">
-                  <label>Select Segment</label>
-                  <div className="segment-selector">
-                    {selectedItem.segments.map((seg) => (
-                      <button
-                        key={seg.id}
-                        className={`segment-selector-btn ${
-                          selectedSegmentId === seg.id ? "active" : ""
-                        } ${getSegmentClass(seg.name)}`}
-                        onClick={() => setSelectedSegmentId(seg.id)}
-                      >
-                        {seg.name}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
-                {/* Category */}
-                <div className="field">
-                  <label>Category</label>
-                  <select
-                    value={selectedCategoryId || ""}
-                    onChange={(e) => handleCategoryChange(e.target.value)}
-                  >
-                    <option value="">Select category...</option>
-                    {categories.map((c) => (
-                      <option key={c.id} value={c.id}>
-                        {c.name}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                {/* Segment Description */}
-                <div className="field">
-                  <label>
-                    Segment Description
-                    {isSaving && <span className="saving-indicator">●</span>}
-                  </label>
-                  <textarea
-                    value={editDescription}
-                    onChange={handleDescriptionChange}
-                    rows={12}
-                    placeholder={`Enter description for ${selectedSegment.name} segment...`}
-                    className="description-textarea"
-                    disabled={selectedSegmentId?.startsWith("temp-")}
-                  />
-                  {selectedSegmentId?.startsWith("temp-") && (
-                    <p style={{ fontSize: "11px", color: "#f39c12", marginTop: "4px" }}>
-                      ⚠️ Add a real segment first to enable description editing
-                    </p>
-                  )}
-                </div>
-
-                {/* Delete Segment Button */}
-                {!selectedSegmentId?.startsWith("temp-") && selectedItem.segments.length > 1 && (
-                  <div className="field">
-                    <button
-                      className="btn cancel"
-                      style={{ background: "#e74c3c", color: "white" }}
-                      onClick={() => deleteSegment(selectedSegment)}
-                      disabled={deleteSegmentMutation.isPending}
-                    >
-                      <Trash2 size={14} style={{ marginRight: "6px" }} />
-                      Delete This Segment
-                    </button>
-                  </div>
-                )}
-
-                {/* Actions */}
-                <div className="actions">
-                  <button 
-                    className="btn save" 
-                    onClick={handleManualSave} 
-                    disabled={isSaving || selectedSegmentId?.startsWith("temp-")}
-                  >
-                    {isSaving ? "SAVING..." : "SAVE NOW"}
-                  </button>
-                  <button 
-                    className="btn cancel" 
-                    onClick={() => {
-                      setSelectedItemId(null)
-                      setSelectedSegmentId(null)
-                    }}
-                  >
-                    CLOSE
-                  </button>
-                </div>
-              </div>
-            </div>
+            <DescriptionPanel
+              selectedItem={selectedItem}
+              selectedSegment={selectedSegment}
+              selectedSegmentId={selectedSegmentId}
+              categories={categories}
+              selectedCategoryId={selectedCategoryId}
+              editDescription={editDescription}
+              isSaving={isSaving}
+              saveMessage={saveMessage}
+              isDeletePending={deleteSegmentMutation.isPending}
+              onClose={handleClosePanel}
+              onSegmentSelect={setSelectedSegmentId}
+              onCategoryChange={handleCategoryChange}
+              onDescriptionChange={handleDescriptionChange}
+              onManualSave={handleManualSave}
+              onDeleteSegment={handleDeleteSegment}
+            />
           )}
         </div>
       </div>
 
-      {/* Bulletin Create Modal */}
-      <BulletinCreateModal 
-        isOpen={showBulletinModal} 
-        onClose={() => setShowBulletinModal(false)} 
-      />
+      <BulletinCreateModal isOpen={showBulletinModal} onClose={() => setShowBulletinModal(false)} />
     </>
   )
 }
-
-export default ReporterPage
