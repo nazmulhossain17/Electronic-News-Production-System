@@ -258,86 +258,6 @@ export const bulletinsApi = {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// RUNDOWN ROWS API
-// ═══════════════════════════════════════════════════════════════════════════════
-
-export const rowsApi = {
-  list: async (bulletinId: string) => {
-    return fetchApi<{ rows: RundownRow[] }>(`/bulletins/${bulletinId}/rows`)
-  },
-
-  create: async (
-    bulletinId: string,
-    data: {
-      blockCode: string
-      rowType?: string
-      slug?: string
-      segment?: string
-      estDurationSecs?: number
-      reporterId?: string
-      storyProducerId?: string
-      insertAfter?: string
-      insertAtPosition?: number
-      status?: string
-    }
-  ) => {
-    return fetchApi<RundownRow>(`/bulletins/${bulletinId}/rows`, {
-      method: "POST",
-      body: JSON.stringify(data),
-    })
-  },
-
-  reorder: async (
-    bulletinId: string,
-    rows: Array<{ id: string; sortOrder: number; pageCode?: string; blockCode?: string }>
-  ) => {
-    return fetchApi<{ rows: any[]; totals: any }>(`/bulletins/${bulletinId}/rows/reorder`, {
-      method: "PUT",
-      body: JSON.stringify({ rows }),
-    })
-  },
-
-  get: async (id: string) => {
-    return fetchApi<{ row: RundownRow }>(`/rows/${id}`)
-  },
-
-  update: async (
-    id: string,
-    data: Partial<{
-      slug: string
-      segment: string
-      storyProducerId: string | null
-      reporterId: string | null
-      estDurationSecs: number
-      actualDurationSecs: number | null
-      float: boolean
-      status: string
-      script: string
-      notes: string
-      categoryId: string | null
-    }>
-  ) => {
-    return fetchApi<RundownRow>(`/rows/${id}`, {
-      method: "PUT",
-      body: JSON.stringify(data),
-    })
-  },
-
-  delete: async (id: string) => {
-    return fetchApi<{ id: string }>(`/rows/${id}`, {
-      method: "DELETE",
-    })
-  },
-
-  approve: async (id: string, approved: boolean, reason?: string) => {
-    return fetchApi<RundownRow>(`/rows/${id}/approve`, {
-      method: "POST",
-      body: JSON.stringify({ approved, reason }),
-    })
-  },
-}
-
-// ═══════════════════════════════════════════════════════════════════════════════
 // SEGMENTS API
 // ═══════════════════════════════════════════════════════════════════════════════
 
@@ -712,6 +632,88 @@ export const appUserApi = {
         body: JSON.stringify(data),
       }
     )
+  },
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// RUNDOWN ROWS API
+// ═══════════════════════════════════════════════════════════════════════════════
+
+export const rowsApi = {
+  list: async (bulletinId: string) => {
+    return fetchApi<{ rows: RundownRow[] }>(`/bulletins/${bulletinId}/rows`)
+  },
+
+  create: async (
+    bulletinId: string,
+    data: {
+      blockCode: string
+      rowType?: string
+      slug?: string
+      segment?: string
+      estDurationSecs?: number
+      reporterId?: string
+      storyProducerId?: string
+      insertAfter?: string
+      insertAtPosition?: number
+      status?: string
+    }
+  ) => {
+    return fetchApi<RundownRow>(`/bulletins/${bulletinId}/rows`, {
+      method: "POST",
+      body: JSON.stringify(data),
+    })
+  },
+
+  reorder: async (
+    bulletinId: string,
+    rows: Array<{ id: string; sortOrder: number; pageCode?: string; blockCode?: string }>
+  ) => {
+    return fetchApi<{ rows: any[]; totals: any }>(`/bulletins/${bulletinId}/rows/reorder`, {
+      method: "PUT",
+      body: JSON.stringify({ rows }),
+    })
+  },
+
+  get: async (id: string) => {
+    return fetchApi<{ row: RundownRow }>(`/rows/${id}`)
+  },
+
+  update: async (
+    id: string,
+    data: Partial<{
+      slug: string
+      segment: string
+      rowType: string
+      storyProducerId: string | null
+      reporterId: string | null
+      estDurationSecs: number
+      actualDurationSecs: number | null
+      float: boolean
+      finalApproval: boolean  // ADDED THIS
+      status: string
+      script: string
+      notes: string
+      categoryId: string | null
+    }>
+  ) => {
+    return fetchApi<RundownRow>(`/rows/${id}`, {
+      method: "PUT",
+      body: JSON.stringify(data),
+    })
+  },
+
+  delete: async (id: string) => {
+    return fetchApi<{ id: string }>(`/rows/${id}`, {
+      method: "DELETE",
+    })
+  },
+
+  approve: async (id: string, approved: boolean, reason?: string) => {
+    return fetchApi<RundownRow>(`/rows/${id}/approve`, {
+      method: "POST",
+      body: JSON.stringify({ approved, reason }),
+    })
   },
 }
 

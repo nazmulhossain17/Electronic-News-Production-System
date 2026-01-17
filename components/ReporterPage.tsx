@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState, useMemo, useCallback, useRef } from "react"
+import { useEffect, useState, useMemo, useCallback } from "react"
 import { useQuery, useQueryClient, useMutation } from "@tanstack/react-query"
 import { Plus, Zap, Trash2, X, CheckSquare, Square } from "lucide-react"
 import { DragEndEvent, DragStartEvent } from "@dnd-kit/core"
@@ -223,8 +223,6 @@ export default function ReporterPage() {
 
   const selectedItem = rundownItems.find((item) => item.id === selectedItemId)
   const selectedSegment = selectedItem?.segments.find((s) => s.id === selectedSegmentId)
-  
-  // Get items selected for deletion
   const selectedForDeleteItems = rundownItems.filter((item) => selectedForDeleteIds.has(item.id))
 
   // ─── Effects ────────────────────────────────────────────────────
@@ -258,7 +256,6 @@ export default function ReporterPage() {
         setSelectedForDeleteIds(new Set())
         setLastSelectedIndex(null)
       }
-      // Delete key to open modal
       if (e.key === "Delete" && selectedForDeleteIds.size > 0 && !showDeleteModal) {
         setShowDeleteModal(true)
       }
@@ -281,7 +278,6 @@ export default function ReporterPage() {
     const currentIndex = rundownItems.findIndex((i) => i.id === item.id)
     
     if (e.shiftKey && lastSelectedIndex !== null) {
-      // Shift+Click: Select range
       const start = Math.min(lastSelectedIndex, currentIndex)
       const end = Math.max(lastSelectedIndex, currentIndex)
       const rangeIds = rundownItems.slice(start, end + 1).map((i) => i.id)
@@ -292,7 +288,6 @@ export default function ReporterPage() {
         return newSet
       })
     } else if (e.ctrlKey || e.metaKey) {
-      // Ctrl+Click: Toggle single item
       setSelectedForDeleteIds((prev) => {
         const newSet = new Set(prev)
         if (newSet.has(item.id)) {
@@ -304,7 +299,6 @@ export default function ReporterPage() {
       })
       setLastSelectedIndex(currentIndex)
     } else {
-      // Regular click: Toggle single item (clear others)
       setSelectedForDeleteIds((prev) => {
         if (prev.has(item.id) && prev.size === 1) {
           return new Set()
@@ -317,10 +311,8 @@ export default function ReporterPage() {
 
   const handleSelectAll = useCallback(() => {
     if (selectedForDeleteIds.size === rundownItems.length) {
-      // Deselect all
       setSelectedForDeleteIds(new Set())
     } else {
-      // Select all
       setSelectedForDeleteIds(new Set(rundownItems.map((item) => item.id)))
     }
   }, [rundownItems, selectedForDeleteIds])
@@ -349,23 +341,19 @@ export default function ReporterPage() {
       }
     }
 
-    // Refresh data
     queryClient.invalidateQueries({ queryKey: ["bulletin", selectedBulletin] })
     queryClient.invalidateQueries({ queryKey: ["bulletin-segments", selectedBulletin] })
 
-    // Clear selection
     setSelectedForDeleteIds(new Set())
     setLastSelectedIndex(null)
     setShowDeleteModal(false)
     setIsDeleting(false)
 
-    // Clear item selection if it was deleted
     if (selectedItemId && idsToDelete.includes(selectedItemId)) {
       setSelectedItemId(null)
       setSelectedSegmentId(null)
     }
 
-    // Show result message
     if (failCount === 0) {
       showMessage(`${successCount} ${successCount === 1 ? "story" : "stories"} deleted successfully`)
     } else {
@@ -381,6 +369,26 @@ export default function ReporterPage() {
     setSelectedForDeleteIds(new Set())
     setLastSelectedIndex(null)
   }, [])
+
+  // ─── Final Approval Handler ─────────────────────────────────────
+
+  const handleFinalApprDoubleClick = useCallback(
+    async (item: RundownDisplayItem) => {
+      const currentApproval = item.finalAppr === "✓"
+      const newApproval = !currentApproval
+
+      try {
+        await updateRowMutation.mutateAsync({
+          id: item.id,
+          data: { finalApproval: newApproval },
+        })
+        showMessage(newApproval ? "Story approved ✓" : "Approval removed")
+      } catch {
+        showMessage("Failed to update approval")
+      }
+    },
+    [updateRowMutation, showMessage]
+  )
 
   // ─── Other Handlers ─────────────────────────────────────────────
 
@@ -871,6 +879,7 @@ export default function ReporterPage() {
               onSegmentCancel={handleSegmentCancel}
               onSegmentDelete={handleDeleteSegment}
               onAddSegment={handleAddSegment}
+              onFinalApprDoubleClick={handleFinalApprDoubleClick}
             />
 
             {/* Add Story Button */}

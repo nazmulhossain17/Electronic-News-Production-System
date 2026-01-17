@@ -1,36 +1,28 @@
-// ============================================================================
-// File: app/api/bulletins/[id]/route.ts
-// Description: Get, update, delete individual bulletin
-// ============================================================================
-
 import { NextRequest, NextResponse } from "next/server"
 import { auth } from "@/lib/auth-config"
 import db from "@/db"
 import { bulletins, rundownRows, user } from "@/db/schema"
 import { eq, asc } from "drizzle-orm"
-import { z } from "zod"
 
 // Helper to format duration
-function formatDuration(secs: number): string {
-  if (!secs) return "0:00"
-  const mins = Math.floor(secs / 60)
-  const seconds = Math.floor(secs % 60)
-  return `${mins}:${seconds.toString().padStart(2, "0")}`
+function formatDuration(seconds: number | null | undefined): string {
+  if (!seconds) return "0:00"
+  const mins = Math.floor(seconds / 60)
+  const secs = seconds % 60
+  return `${mins}:${secs.toString().padStart(2, "0")}`
 }
 
-// Helper to format time from seconds
-function formatTimeFromSecs(baseSecs: number): string {
-  const hours = Math.floor(baseSecs / 3600)
-  const mins = Math.floor((baseSecs % 3600) / 60)
-  return `${hours.toString().padStart(2, "0")}:${mins.toString().padStart(2, "0")}`
-}
-
-// GET - Get bulletin with rows
+// GET - Get single bulletin with rows
 export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const session = await auth.api.getSession({ headers: request.headers })
+    if (!session?.user) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+    }
+
     const { id } = await params
 
     // Get bulletin
@@ -44,10 +36,9 @@ export async function GET(
       return NextResponse.json({ error: "Bulletin not found" }, { status: 404 })
     }
 
-    // Get rows with user names using left joins
-    const rowsWithUsers = await db
+    // Get rows with user info for lastModifiedBy
+    const rows = await db
       .select({
-        // All row fields
         id: rundownRows.id,
         bulletinId: rundownRows.bulletinId,
         pageCode: rundownRows.pageCode,
@@ -63,26 +54,18 @@ export async function GET(
         finalApproval: rundownRows.finalApproval,
         approvedBy: rundownRows.approvedBy,
         approvedAt: rundownRows.approvedAt,
-        mosId: rundownRows.mosId,
-        mosObjSlug: rundownRows.mosObjSlug,
-        mosObjectTime: rundownRows.mosObjectTime,
-        mosStatus: rundownRows.mosStatus,
-        mosUserDuration: rundownRows.mosUserDuration,
         estDurationSecs: rundownRows.estDurationSecs,
         actualDurationSecs: rundownRows.actualDurationSecs,
         frontTimeSecs: rundownRows.frontTimeSecs,
         cumeTimeSecs: rundownRows.cumeTimeSecs,
         float: rundownRows.float,
-        breakNumber: rundownRows.breakNumber,
         status: rundownRows.status,
         script: rundownRows.script,
         notes: rundownRows.notes,
-        sourcePoolStoryId: rundownRows.sourcePoolStoryId,
         lastModifiedBy: rundownRows.lastModifiedBy,
-        createdBy: rundownRows.createdBy,
         createdAt: rundownRows.createdAt,
         updatedAt: rundownRows.updatedAt,
-        // Joined user names
+        // Join user name
         lastModifiedByName: user.name,
       })
       .from(rundownRows)
@@ -90,42 +73,29 @@ export async function GET(
       .where(eq(rundownRows.bulletinId, id))
       .orderBy(asc(rundownRows.sortOrder))
 
-    // Format rows with display fields
-    const formattedRows = rowsWithUsers.map((row) => ({
+    // Format rows with display values
+    const formattedRows = rows.map((row) => ({
       ...row,
       estDurationDisplay: formatDuration(row.estDurationSecs),
-      actualDurationDisplay: row.actualDurationSecs 
-        ? formatDuration(row.actualDurationSecs) 
+      actualDurationDisplay: row.actualDurationSecs
+        ? formatDuration(row.actualDurationSecs)
         : "",
-      frontTimeDisplay: row.frontTimeSecs 
-        ? formatTimeFromSecs(row.frontTimeSecs) 
-        : "",
+      frontTimeDisplay: formatDuration(row.frontTimeSecs),
       cumeTimeDisplay: formatDuration(row.cumeTimeSecs),
       lastModifiedByName: row.lastModifiedByName || "SYSTEM",
     }))
 
-    // Get producer name if exists
-    let producerName: string | undefined
-    if (bulletin.producerId) {
-      const [producer] = await db
-        .select({ name: user.name })
-        .from(user)
-        .where(eq(user.id, bulletin.producerId))
-        .limit(1)
-      producerName = producer?.name
-    }
-
     return NextResponse.json({
-      bulletin: {
-        ...bulletin,
-        producerName,
-      },
+      bulletin,
       rows: formattedRows,
     })
   } catch (error) {
     console.error("Get bulletin error:", error)
     return NextResponse.json(
-      { error: "Failed to get bulletin", details: String(error) },
+      { 
+        error: "Failed to get bulletin",
+        details: error instanceof Error ? error.message : String(error)
+      },
       { status: 500 }
     )
   }
@@ -146,54 +116,57 @@ export async function PUT(
     const body = await request.json()
 
     // Check if bulletin exists
-    const [existing] = await db
+    const [existingBulletin] = await db
       .select()
       .from(bulletins)
       .where(eq(bulletins.id, id))
       .limit(1)
 
-    if (!existing) {
+    if (!existingBulletin) {
       return NextResponse.json({ error: "Bulletin not found" }, { status: 404 })
     }
 
-    // Check if locked by another user
-    if (existing.isLocked && existing.lockedBy !== session.user.id) {
-      return NextResponse.json(
-        { error: "Bulletin is locked by another user" },
-        { status: 423 }
-      )
+    // Build update data
+    const updateData: Record<string, unknown> = {
+      updatedAt: new Date(),
     }
 
-    // Build update object
-    const updateData: Record<string, unknown> = {}
-    
-    if (body.title !== undefined) updateData.title = body.title
-    if (body.subtitle !== undefined) updateData.subtitle = body.subtitle
-    if (body.code !== undefined) updateData.code = body.code
-    if (body.airDate !== undefined) updateData.airDate = new Date(body.airDate)
-    if (body.startTime !== undefined) updateData.startTime = body.startTime
-    if (body.endTime !== undefined) updateData.endTime = body.endTime
-    if (body.plannedDurationSecs !== undefined) updateData.plannedDurationSecs = body.plannedDurationSecs
-    if (body.status !== undefined) updateData.status = body.status
-    if (body.producerId !== undefined) updateData.producerId = body.producerId
-    if (body.deskId !== undefined) updateData.deskId = body.deskId
-    if (body.notes !== undefined) updateData.notes = body.notes
+    const allowedFields = [
+      "title",
+      "subtitle",
+      "code",
+      "airDate",
+      "startTime",
+      "endTime",
+      "plannedDurationSecs",
+      "totalEstDurationSecs",
+      "totalActualDurationSecs",
+      "totalCommercialSecs",
+      "timingVarianceSecs",
+      "status",
+      "isLocked",
+      "producerId",
+      "deskId",
+      "notes",
+    ]
 
-    if (Object.keys(updateData).length === 0) {
-      return NextResponse.json({ error: "No fields to update" }, { status: 400 })
+    for (const field of allowedFields) {
+      if (body[field] !== undefined) {
+        updateData[field] = body[field]
+      }
     }
 
-    const [updated] = await db
+    const [updatedBulletin] = await db
       .update(bulletins)
       .set(updateData)
       .where(eq(bulletins.id, id))
       .returning()
 
-    return NextResponse.json({ bulletin: updated })
+    return NextResponse.json(updatedBulletin)
   } catch (error) {
     console.error("Update bulletin error:", error)
     return NextResponse.json(
-      { error: "Failed to update bulletin", details: String(error) },
+      { error: "Failed to update bulletin" },
       { status: 500 }
     )
   }
@@ -213,32 +186,24 @@ export async function DELETE(
     const { id } = await params
 
     // Check if bulletin exists
-    const [existing] = await db
+    const [existingBulletin] = await db
       .select()
       .from(bulletins)
       .where(eq(bulletins.id, id))
       .limit(1)
 
-    if (!existing) {
+    if (!existingBulletin) {
       return NextResponse.json({ error: "Bulletin not found" }, { status: 404 })
     }
 
-    // Check if locked
-    if (existing.isLocked) {
-      return NextResponse.json(
-        { error: "Cannot delete locked bulletin" },
-        { status: 423 }
-      )
-    }
-
-    // Delete (rows will cascade)
+    // Delete bulletin (cascade will delete rows and segments)
     await db.delete(bulletins).where(eq(bulletins.id, id))
 
-    return NextResponse.json({ id, message: "Bulletin deleted" })
+    return NextResponse.json({ success: true, id })
   } catch (error) {
     console.error("Delete bulletin error:", error)
     return NextResponse.json(
-      { error: "Failed to delete bulletin", details: String(error) },
+      { error: "Failed to delete bulletin" },
       { status: 500 }
     )
   }

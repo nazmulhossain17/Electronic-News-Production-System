@@ -1,27 +1,24 @@
-// ============================================================================
-// File: app/api/rows/[id]/route.ts
-// Description: Get, update, delete individual rundown row
-// ============================================================================
-
 import { NextRequest, NextResponse } from "next/server"
 import { auth } from "@/lib/auth-config"
 import db from "@/db"
-import { rundownRows, user } from "@/db/schema"
+import { rundownRows, rowSegments } from "@/db/schema"
 import { eq } from "drizzle-orm"
 import { z } from "zod"
 
 const updateRowSchema = z.object({
   slug: z.string().optional(),
   segment: z.string().optional(),
-  storyProducerId: z.string().nullable().optional(),
-  reporterId: z.string().nullable().optional(),
-  estDurationSecs: z.number().optional(),
-  actualDurationSecs: z.number().nullable().optional(),
-  float: z.boolean().optional(),
+  rowType: z.enum(["STORY", "COMMERCIAL", "BREAK_LINK", "OPEN", "CLOSE", "WELCOME"]).optional(),
   status: z.enum(["BLANK", "DRAFT", "READY", "APPROVED", "KILLED", "AIRED"]).optional(),
-  script: z.string().optional(),
-  notes: z.string().optional(),
-  categoryId: z.string().nullable().optional(),
+  storyProducerId: z.string().optional().nullable(),
+  reporterId: z.string().optional().nullable(),
+  categoryId: z.string().uuid().optional().nullable(),
+  estDurationSecs: z.number().int().min(0).optional(),
+  actualDurationSecs: z.number().int().min(0).optional().nullable(),
+  float: z.boolean().optional(),
+  finalApproval: z.boolean().optional(),
+  script: z.string().optional().nullable(),
+  notes: z.string().optional().nullable(),
 })
 
 // GET - Get single row
@@ -30,41 +27,16 @@ export async function GET(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const session = await auth.api.getSession({ headers: request.headers })
+    if (!session?.user) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+    }
+
     const { id } = await params
 
     const [row] = await db
-      .select({
-        id: rundownRows.id,
-        bulletinId: rundownRows.bulletinId,
-        pageCode: rundownRows.pageCode,
-        blockCode: rundownRows.blockCode,
-        pageNumber: rundownRows.pageNumber,
-        sortOrder: rundownRows.sortOrder,
-        rowType: rundownRows.rowType,
-        slug: rundownRows.slug,
-        segment: rundownRows.segment,
-        storyProducerId: rundownRows.storyProducerId,
-        reporterId: rundownRows.reporterId,
-        categoryId: rundownRows.categoryId,
-        finalApproval: rundownRows.finalApproval,
-        approvedBy: rundownRows.approvedBy,
-        approvedAt: rundownRows.approvedAt,
-        estDurationSecs: rundownRows.estDurationSecs,
-        actualDurationSecs: rundownRows.actualDurationSecs,
-        frontTimeSecs: rundownRows.frontTimeSecs,
-        cumeTimeSecs: rundownRows.cumeTimeSecs,
-        float: rundownRows.float,
-        breakNumber: rundownRows.breakNumber,
-        status: rundownRows.status,
-        script: rundownRows.script,
-        notes: rundownRows.notes,
-        lastModifiedBy: rundownRows.lastModifiedBy,
-        createdAt: rundownRows.createdAt,
-        updatedAt: rundownRows.updatedAt,
-        lastModifiedByName: user.name,
-      })
+      .select()
       .from(rundownRows)
-      .leftJoin(user, eq(rundownRows.lastModifiedBy, user.id))
       .where(eq(rundownRows.id, id))
       .limit(1)
 
@@ -72,11 +44,11 @@ export async function GET(
       return NextResponse.json({ error: "Row not found" }, { status: 404 })
     }
 
-    return NextResponse.json({ row })
+    return NextResponse.json(row)
   } catch (error) {
     console.error("Get row error:", error)
     return NextResponse.json(
-      { error: "Failed to get row", details: String(error) },
+      { error: "Failed to get row" },
       { status: 500 }
     )
   }
@@ -95,48 +67,82 @@ export async function PUT(
 
     const { id } = await params
     const body = await request.json()
-    const data = updateRowSchema.parse(body)
+    const validatedData = updateRowSchema.parse(body)
+
+    // Check if row exists
+    const [existingRow] = await db
+      .select()
+      .from(rundownRows)
+      .where(eq(rundownRows.id, id))
+      .limit(1)
+
+    if (!existingRow) {
+      return NextResponse.json({ error: "Row not found" }, { status: 404 })
+    }
 
     // Build update object
     const updateData: Record<string, unknown> = {
-      lastModifiedBy: session.user.id, // Always update this
+      lastModifiedBy: session.user.id,
+      updatedAt: new Date(),
     }
 
-    if (data.slug !== undefined) updateData.slug = data.slug
-    if (data.segment !== undefined) updateData.segment = data.segment
-    if (data.storyProducerId !== undefined) updateData.storyProducerId = data.storyProducerId
-    if (data.reporterId !== undefined) updateData.reporterId = data.reporterId
-    if (data.estDurationSecs !== undefined) updateData.estDurationSecs = data.estDurationSecs
-    if (data.actualDurationSecs !== undefined) updateData.actualDurationSecs = data.actualDurationSecs
-    if (data.float !== undefined) updateData.float = data.float
-    if (data.status !== undefined) updateData.status = data.status
-    if (data.script !== undefined) updateData.script = data.script
-    if (data.notes !== undefined) updateData.notes = data.notes
-    if (data.categoryId !== undefined) updateData.categoryId = data.categoryId
+    if (validatedData.slug !== undefined) {
+      updateData.slug = validatedData.slug
+    }
+    if (validatedData.segment !== undefined) {
+      updateData.segment = validatedData.segment
+    }
+    if (validatedData.rowType !== undefined) {
+      updateData.rowType = validatedData.rowType
+    }
+    if (validatedData.status !== undefined) {
+      updateData.status = validatedData.status
+    }
+    if (validatedData.storyProducerId !== undefined) {
+      updateData.storyProducerId = validatedData.storyProducerId
+    }
+    if (validatedData.reporterId !== undefined) {
+      updateData.reporterId = validatedData.reporterId
+    }
+    if (validatedData.categoryId !== undefined) {
+      updateData.categoryId = validatedData.categoryId
+    }
+    if (validatedData.estDurationSecs !== undefined) {
+      updateData.estDurationSecs = validatedData.estDurationSecs
+    }
+    if (validatedData.actualDurationSecs !== undefined) {
+      updateData.actualDurationSecs = validatedData.actualDurationSecs
+    }
+    if (validatedData.float !== undefined) {
+      updateData.float = validatedData.float
+    }
+    if (validatedData.finalApproval !== undefined) {
+      updateData.finalApproval = validatedData.finalApproval
+      // Also set approvedBy and approvedAt when approving
+      if (validatedData.finalApproval) {
+        updateData.approvedBy = session.user.id
+        updateData.approvedAt = new Date()
+      } else {
+        updateData.approvedBy = null
+        updateData.approvedAt = null
+      }
+    }
+    if (validatedData.script !== undefined) {
+      updateData.script = validatedData.script
+    }
+    if (validatedData.notes !== undefined) {
+      updateData.notes = validatedData.notes
+    }
 
-    const [updated] = await db
+    const [updatedRow] = await db
       .update(rundownRows)
       .set(updateData)
       .where(eq(rundownRows.id, id))
       .returning()
 
-    if (!updated) {
-      return NextResponse.json({ error: "Row not found" }, { status: 404 })
-    }
+    console.log(`✅ Updated row ${id}:`, Object.keys(validatedData))
 
-    // Get user name for the response
-    const [userRecord] = await db
-      .select({ name: user.name })
-      .from(user)
-      .where(eq(user.id, session.user.id))
-      .limit(1)
-
-    console.log(`✅ Row ${id} updated by ${userRecord?.name || session.user.id}`)
-
-    return NextResponse.json({
-      ...updated,
-      lastModifiedByName: userRecord?.name || session.user.name || "Unknown",
-    })
+    return NextResponse.json(updatedRow)
   } catch (error) {
     console.error("Update row error:", error)
 
@@ -148,7 +154,7 @@ export async function PUT(
     }
 
     return NextResponse.json(
-      { error: "Failed to update row", details: String(error) },
+      { error: "Failed to update row" },
       { status: 500 }
     )
   }
@@ -168,26 +174,29 @@ export async function DELETE(
     const { id } = await params
 
     // Check if row exists
-    const [existing] = await db
+    const [existingRow] = await db
       .select()
       .from(rundownRows)
       .where(eq(rundownRows.id, id))
       .limit(1)
 
-    if (!existing) {
+    if (!existingRow) {
       return NextResponse.json({ error: "Row not found" }, { status: 404 })
     }
 
-    // Delete (segments will cascade)
+    // Delete segments first (if any)
+    await db.delete(rowSegments).where(eq(rowSegments.rowId, id))
+
+    // Delete the row
     await db.delete(rundownRows).where(eq(rundownRows.id, id))
 
-    console.log(`✅ Row ${id} deleted`)
+    console.log(`✅ Deleted row ${id} and its segments`)
 
-    return NextResponse.json({ id, message: "Row deleted" })
+    return NextResponse.json({ success: true, id })
   } catch (error) {
     console.error("Delete row error:", error)
     return NextResponse.json(
-      { error: "Failed to delete row", details: String(error) },
+      { error: "Failed to delete row" },
       { status: 500 }
     )
   }

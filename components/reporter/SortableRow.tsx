@@ -2,7 +2,7 @@
 
 import { useSortable } from "@dnd-kit/sortable"
 import { CSS } from "@dnd-kit/utilities"
-import { GripVertical, Check } from "lucide-react"
+import { GripVertical, Check, CheckCircle } from "lucide-react"
 import { Segment } from "@/lib/api-client"
 import { RundownDisplayItem } from "@/types/reporter"
 
@@ -31,6 +31,7 @@ interface SortableRowProps {
   onSegmentBlur: (isNew: boolean, rowId: string) => void
   onSegmentDelete: (segment: Segment) => void
   onAddSegment: (rowId: string) => void
+  onFinalApprDoubleClick: (item: RundownDisplayItem) => void  // NEW
 }
 
 // Segment color mapping
@@ -48,6 +49,9 @@ const segmentColors: Record<string, { bg: string; border: string }> = {
   WEATHER: { bg: "#3498db", border: "#2980b9" },
   SPORTS: { bg: "#e74c3c", border: "#c0392b" },
 }
+
+// Common border style
+const cellBorder = "1px solid rgba(100, 116, 139, 0.3)"
 
 export default function SortableRow({
   item,
@@ -74,6 +78,7 @@ export default function SortableRow({
   onSegmentBlur,
   onSegmentDelete,
   onAddSegment,
+  onFinalApprDoubleClick,
 }: SortableRowProps) {
   const {
     attributes,
@@ -83,6 +88,8 @@ export default function SortableRow({
     transition,
     isDragging,
   } = useSortable({ id: item.id })
+
+  const isApproved = item.finalAppr === "✓"
 
   // ─── Styles ─────────────────────────────────────────────────────
 
@@ -115,6 +122,8 @@ export default function SortableRow({
       textAlign: "center" as const,
       verticalAlign: "middle" as const,
       transition: "color 0.2s, background 0.2s",
+      borderBottom: cellBorder,
+      borderRight: cellBorder,
     },
     pg: {
       cursor: "pointer",
@@ -126,6 +135,8 @@ export default function SortableRow({
       textAlign: "center" as const,
       position: "relative" as const,
       userSelect: "none" as const,
+      borderBottom: cellBorder,
+      borderRight: cellBorder,
     },
     pgCheckbox: {
       display: "flex",
@@ -141,6 +152,8 @@ export default function SortableRow({
       cursor: "pointer",
       minWidth: "150px",
       padding: "8px",
+      borderBottom: cellBorder,
+      borderRight: cellBorder,
     },
     slugText: {
       display: "block",
@@ -161,6 +174,8 @@ export default function SortableRow({
     },
     segmentCell: {
       padding: "4px 8px",
+      borderBottom: cellBorder,
+      borderRight: cellBorder,
     },
     segmentsContainer: {
       display: "flex",
@@ -239,7 +254,31 @@ export default function SortableRow({
     td: {
       padding: "8px",
       fontSize: "12px",
-      borderBottom: "1px solid rgba(255, 255, 255, 0.05)",
+      borderBottom: cellBorder,
+      borderRight: cellBorder,
+      verticalAlign: "middle" as const,
+    },
+    tdLast: {
+      padding: "8px",
+      fontSize: "12px",
+      borderBottom: cellBorder,
+      verticalAlign: "middle" as const,
+    },
+    finalAppr: {
+      padding: "8px",
+      fontSize: "12px",
+      borderBottom: cellBorder,
+      borderRight: cellBorder,
+      verticalAlign: "middle" as const,
+      textAlign: "center" as const,
+      cursor: "pointer",
+      userSelect: "none" as const,
+      transition: "background 0.2s",
+    },
+    approvedIcon: {
+      display: "flex",
+      alignItems: "center",
+      justifyContent: "center",
     },
   }
 
@@ -407,13 +446,35 @@ export default function SortableRow({
       </td>
 
       <td style={styles.td}>{item.storyProduc}</td>
-      <td style={styles.td}>{item.finalAppr}</td>
+      
+      {/* Final Approval - Double click to toggle */}
+      <td
+        style={styles.finalAppr}
+        onDoubleClick={(e) => {
+          e.stopPropagation()
+          onFinalApprDoubleClick(item)
+        }}
+        onMouseEnter={(e) => {
+          e.currentTarget.style.background = "rgba(39, 174, 96, 0.2)"
+        }}
+        onMouseLeave={(e) => {
+          e.currentTarget.style.background = "transparent"
+        }}
+        title="Double-click to toggle approval"
+      >
+        {isApproved ? (
+          <div style={styles.approvedIcon}>
+            <CheckCircle size={18} color="#27ae60" />
+          </div>
+        ) : null}
+      </td>
+
       <td style={styles.td}>{item.float}</td>
       <td style={styles.td}>{item.estDuration}</td>
       <td style={styles.td}>{item.actual}</td>
       <td style={styles.td}>{item.front}</td>
       <td style={styles.td}>{item.cume}</td>
-      <td style={styles.td}>{item.lastModBy}</td>
+      <td style={styles.tdLast}>{item.lastModBy}</td>
     </tr>
   )
 }

@@ -51,7 +51,11 @@ interface RundownTableProps {
   onSegmentCancel: () => void
   onSegmentDelete: (segment: Segment) => void
   onAddSegment: (rowId: string) => void
+  onFinalApprDoubleClick: (item: RundownDisplayItem) => void  // NEW
 }
+
+// Common border style
+const cellBorder = "1px solid rgba(100, 116, 139, 0.3)"
 
 export default function RundownTable({
   items,
@@ -81,6 +85,7 @@ export default function RundownTable({
   onSegmentCancel,
   onSegmentDelete,
   onAddSegment,
+  onFinalApprDoubleClick,
 }: RundownTableProps) {
   const slugInputRef = useRef<HTMLInputElement>(null)
   const segmentInputRef = useRef<HTMLInputElement>(null)
@@ -98,12 +103,16 @@ export default function RundownTable({
 
   const activeItem = items.find((item) => item.id === activeId)
 
+  
+
   // ─── Styles ─────────────────────────────────────────────────────
 
   const styles = {
     container: {
       flex: 1,
       overflow: "auto",
+      border: cellBorder,
+      borderRadius: "4px",
     },
     table: {
       width: "100%",
@@ -112,6 +121,22 @@ export default function RundownTable({
       userSelect: "none" as const,
     },
     th: {
+      position: "sticky" as const,
+      top: 0,
+      background: "#2c3e50",
+      color: "#ecf0f1",
+      padding: "10px 8px",
+      textAlign: "left" as const,
+      fontWeight: 600,
+      fontSize: "11px",
+      textTransform: "uppercase" as const,
+      letterSpacing: "0.5px",
+      borderBottom: "2px solid #3498db",
+      borderRight: cellBorder,
+      whiteSpace: "nowrap" as const,
+      zIndex: 10,
+    },
+    thLast: {
       position: "sticky" as const,
       top: 0,
       background: "#2c3e50",
@@ -136,6 +161,7 @@ export default function RundownTable({
       padding: "40px 20px",
       color: "#7f8c8d",
       fontSize: "14px",
+      borderBottom: cellBorder,
     },
   }
 
@@ -161,7 +187,7 @@ export default function RundownTable({
               <th style={styles.th}>Actual</th>
               <th style={styles.th}>Front</th>
               <th style={styles.th}>Cume</th>
-              <th style={styles.th}>Last Mod By</th>
+              <th style={styles.thLast}>Last Mod By</th>
             </tr>
           </thead>
           <tbody>
@@ -233,6 +259,7 @@ export default function RundownTable({
                     }}
                     onSegmentDelete={onSegmentDelete}
                     onAddSegment={onAddSegment}
+                    onFinalApprDoubleClick={onFinalApprDoubleClick}
                   />
                 ))}
               </SortableContext>

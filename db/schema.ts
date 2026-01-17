@@ -318,20 +318,20 @@ export const bulletins = pgTable(
 export const rundownRows = pgTable(
   "rundown_rows",
   {
-    id: uuid("id").primaryKey().defaultRandom(),
+    id: uuid("id").defaultRandom().primaryKey(),
     bulletinId: uuid("bulletin_id")
-      .references(() => bulletins.id, { onDelete: "cascade" })
-      .notNull(),
+      .notNull()
+      .references(() => bulletins.id, { onDelete: "cascade" }),
 
-    // Position
-    pageCode: varchar("page_code", { length: 10 }).notNull(),
-    blockCode: varchar("block_code", { length: 10 }).notNull(),
-    pageNumber: integer("page_number").notNull().default(0),
+    // Page/Block
+    pageCode: varchar("page_code", { length: 10 }),
+    blockCode: varchar("block_code", { length: 5 }),
+    pageNumber: integer("page_number"),
     sortOrder: integer("sort_order").notNull().default(0),
 
     // Type & Content
     rowType: rowTypeEnum("row_type").notNull().default("STORY"),
-    slug: varchar("slug", { length: 255 }).notNull().default(""),
+    slug: varchar("slug", { length: 255 }),
     segment: varchar("segment", { length: 50 }),
 
     // Assignment
@@ -340,26 +340,18 @@ export const rundownRows = pgTable(
     categoryId: uuid("category_id").references(() => categories.id),
 
     // Approval
-    finalApproval: boolean("final_approval").default(false).notNull(),
+    finalApproval: boolean("final_approval").default(false),
     approvedBy: text("approved_by").references(() => user.id),
     approvedAt: timestamp("approved_at"),
 
-    // MOS Integration
-    mosId: varchar("mos_id", { length: 255 }),
-    mosObjSlug: varchar("mos_obj_slug", { length: 255 }),
-    mosObjectTime: varchar("mos_object_time", { length: 50 }),
-    mosStatus: varchar("mos_status", { length: 50 }),
-    mosUserDuration: varchar("mos_user_duration", { length: 50 }),
-
-    // Timing (in seconds)
-    estDurationSecs: integer("est_duration_secs").notNull().default(0),
+    // Timing
+    estDurationSecs: integer("est_duration_secs").default(90),
     actualDurationSecs: integer("actual_duration_secs"),
-    frontTimeSecs: integer("front_time_secs").notNull().default(0),
-    cumeTimeSecs: integer("cume_time_secs").notNull().default(0),
+    frontTimeSecs: integer("front_time_secs").default(0),
+    cumeTimeSecs: integer("cume_time_secs").default(0),
 
     // Flags
-    float: boolean("float").default(false).notNull(),
-    breakNumber: integer("break_number"),
+    float: boolean("float").default(false),
 
     // Status
     status: rowStatusEnum("status").notNull().default("BLANK"),
@@ -368,16 +360,8 @@ export const rundownRows = pgTable(
     script: text("script"),
     notes: text("notes"),
 
-    // Source (if from pool)
-    sourcePoolStoryId: uuid("source_pool_story_id"),
-
     // Audit
-    lastModifiedBy: text("last_modified_by")
-      .references(() => user.id)
-      .notNull(),
-    createdBy: text("created_by")
-      .references(() => user.id)
-      .notNull(),
+    lastModifiedBy: text("last_modified_by").references(() => user.id),
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at")
       .defaultNow()
@@ -388,8 +372,6 @@ export const rundownRows = pgTable(
     index("rundown_rows_bulletin_id_idx").on(table.bulletinId),
     index("rundown_rows_sort_order_idx").on(table.sortOrder),
     index("rundown_rows_status_idx").on(table.status),
-    index("rundown_rows_reporter_id_idx").on(table.reporterId),
-    index("rundown_rows_block_code_idx").on(table.blockCode),
   ]
 )
 
@@ -633,6 +615,7 @@ export const rundownRowsRelations = relations(rundownRows, ({ one, many }) => ({
   }),
   segments: many(rowSegments),
   storyProducer: one(user, {
+    relationName: "storyProducer",
     fields: [rundownRows.storyProducerId],
     references: [user.id],
   }),
@@ -646,10 +629,12 @@ export const rundownRowsRelations = relations(rundownRows, ({ one, many }) => ({
     references: [categories.id],
   }),
   approvedByUser: one(user, {
+    relationName: "approver",
     fields: [rundownRows.approvedBy],
     references: [user.id],
   }),
   lastModifiedByUser: one(user, {
+    relationName: "lastModifier",
     fields: [rundownRows.lastModifiedBy],
     references: [user.id],
   }),
