@@ -1,5 +1,5 @@
 {
-  "id": "eaec5e1c-054c-4478-bee2-4ff10db25e57",
+  "id": "aa9eb352-ab5a-4c49-9f46-c2843c588855",
   "prevId": "00000000-0000-0000-0000-000000000000",
   "version": "7",
   "dialect": "postgresql",
@@ -606,6 +606,13 @@
           "type": "uuid",
           "primaryKey": false,
           "notNull": false
+        },
+        "sort_order": {
+          "name": "sort_order",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "default": 0
         },
         "notes": {
           "name": "notes",
@@ -1485,20 +1492,19 @@
           "name": "page_code",
           "type": "varchar(10)",
           "primaryKey": false,
-          "notNull": true
+          "notNull": false
         },
         "block_code": {
           "name": "block_code",
-          "type": "varchar(10)",
+          "type": "varchar(5)",
           "primaryKey": false,
-          "notNull": true
+          "notNull": false
         },
         "page_number": {
           "name": "page_number",
           "type": "integer",
           "primaryKey": false,
-          "notNull": true,
-          "default": 0
+          "notNull": false
         },
         "sort_order": {
           "name": "sort_order",
@@ -1519,8 +1525,7 @@
           "name": "slug",
           "type": "varchar(255)",
           "primaryKey": false,
-          "notNull": true,
-          "default": "''"
+          "notNull": false
         },
         "segment": {
           "name": "segment",
@@ -1550,7 +1555,7 @@
           "name": "final_approval",
           "type": "boolean",
           "primaryKey": false,
-          "notNull": true,
+          "notNull": false,
           "default": false
         },
         "approved_by": {
@@ -1565,42 +1570,12 @@
           "primaryKey": false,
           "notNull": false
         },
-        "mos_id": {
-          "name": "mos_id",
-          "type": "varchar(255)",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "mos_obj_slug": {
-          "name": "mos_obj_slug",
-          "type": "varchar(255)",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "mos_object_time": {
-          "name": "mos_object_time",
-          "type": "varchar(50)",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "mos_status": {
-          "name": "mos_status",
-          "type": "varchar(50)",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "mos_user_duration": {
-          "name": "mos_user_duration",
-          "type": "varchar(50)",
-          "primaryKey": false,
-          "notNull": false
-        },
         "est_duration_secs": {
           "name": "est_duration_secs",
           "type": "integer",
           "primaryKey": false,
-          "notNull": true,
-          "default": 0
+          "notNull": false,
+          "default": 90
         },
         "actual_duration_secs": {
           "name": "actual_duration_secs",
@@ -1612,28 +1587,22 @@
           "name": "front_time_secs",
           "type": "integer",
           "primaryKey": false,
-          "notNull": true,
+          "notNull": false,
           "default": 0
         },
         "cume_time_secs": {
           "name": "cume_time_secs",
           "type": "integer",
           "primaryKey": false,
-          "notNull": true,
+          "notNull": false,
           "default": 0
         },
         "float": {
           "name": "float",
           "type": "boolean",
           "primaryKey": false,
-          "notNull": true,
+          "notNull": false,
           "default": false
-        },
-        "break_number": {
-          "name": "break_number",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": false
         },
         "status": {
           "name": "status",
@@ -1655,23 +1624,11 @@
           "primaryKey": false,
           "notNull": false
         },
-        "source_pool_story_id": {
-          "name": "source_pool_story_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
         "last_modified_by": {
           "name": "last_modified_by",
           "type": "text",
           "primaryKey": false,
-          "notNull": true
-        },
-        "created_by": {
-          "name": "created_by",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
+          "notNull": false
         },
         "created_at": {
           "name": "created_at",
@@ -1724,36 +1681,6 @@
           "columns": [
             {
               "expression": "status",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "rundown_rows_reporter_id_idx": {
-          "name": "rundown_rows_reporter_id_idx",
-          "columns": [
-            {
-              "expression": "reporter_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "rundown_rows_block_code_idx": {
-          "name": "rundown_rows_block_code_idx",
-          "columns": [
-            {
-              "expression": "block_code",
               "isExpression": false,
               "asc": true,
               "nulls": "last"
@@ -1837,19 +1764,6 @@
           "tableTo": "user",
           "columnsFrom": [
             "last_modified_by"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
-        },
-        "rundown_rows_created_by_user_id_fk": {
-          "name": "rundown_rows_created_by_user_id_fk",
-          "tableFrom": "rundown_rows",
-          "tableTo": "user",
-          "columnsFrom": [
-            "created_by"
           ],
           "columnsTo": [
             "id"

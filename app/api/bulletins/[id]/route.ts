@@ -1,3 +1,8 @@
+// ============================================================================
+// File: app/api/bulletins/[id]/route.ts
+// Description: Single bulletin API endpoints - get, update, delete
+// ============================================================================
+
 import { NextRequest, NextResponse } from "next/server"
 import { auth } from "@/lib/auth-config"
 import db from "@/db"
@@ -36,7 +41,7 @@ export async function GET(
       return NextResponse.json({ error: "Bulletin not found" }, { status: 404 })
     }
 
-    // Get rows with user info for lastModifiedBy
+    // Get rows with lastModifiedBy user info
     const rows = await db
       .select({
         id: rundownRows.id,
@@ -65,7 +70,7 @@ export async function GET(
         lastModifiedBy: rundownRows.lastModifiedBy,
         createdAt: rundownRows.createdAt,
         updatedAt: rundownRows.updatedAt,
-        // Join user name
+        // Join user name for lastModifiedBy
         lastModifiedByName: user.name,
       })
       .from(rundownRows)
@@ -74,6 +79,7 @@ export async function GET(
       .orderBy(asc(rundownRows.sortOrder))
 
     // Format rows with display values
+    // Note: createdByName uses lastModifiedByName as fallback since createdBy column doesn't exist
     const formattedRows = rows.map((row) => ({
       ...row,
       estDurationDisplay: formatDuration(row.estDurationSecs),
@@ -83,6 +89,8 @@ export async function GET(
       frontTimeDisplay: formatDuration(row.frontTimeSecs),
       cumeTimeDisplay: formatDuration(row.cumeTimeSecs),
       lastModifiedByName: row.lastModifiedByName || "SYSTEM",
+      // Use lastModifiedByName as createdByName fallback (or could derive from bulletin creator)
+      createdByName: row.lastModifiedByName || "SYSTEM",
     }))
 
     return NextResponse.json({

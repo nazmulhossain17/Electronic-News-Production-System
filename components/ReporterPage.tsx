@@ -1,3 +1,8 @@
+// ============================================================================
+// File: components/ReporterPage.tsx
+// Description: Main reporter interface for ENPS newsroom system
+// ============================================================================
+
 "use client"
 
 import { useEffect, useState, useMemo, useCallback } from "react"
@@ -6,12 +11,13 @@ import { Plus, Zap, Trash2, X, CheckSquare, Square } from "lucide-react"
 import { DragEndEvent, DragStartEvent } from "@dnd-kit/core"
 import { arrayMove } from "@dnd-kit/sortable"
 
-import api, { Segment } from "@/lib/api-client"
+import api, { Segment, Bulletin } from "@/lib/api-client"
 import Navbar from "@/components/Navbar"
 import BulletinCreateModal from "@/components/BulletinCreateModal"
 import { createPlaceholderSegment, formatDuration } from "@/types/helpers"
 import { RundownDisplayItem } from "@/types/reporter"
 import BulletinsSidebar from "./reporter/BulletinsSidebar"
+import BulletinEditModal, { BulletinUpdateData } from "./reporter/BulletinEditModal"
 import RundownTable from "./reporter/RundownTable"
 import DescriptionPanel from "./reporter/DescriptionPanel"
 import DeleteConfirmModal from "./reporter/DeleteConfirmModal"
@@ -23,6 +29,17 @@ export default function ReporterPage() {
   const [selectedBulletin, setSelectedBulletin] = useState<string | null>(null)
   const [selectedItemId, setSelectedItemId] = useState<string | null>(null)
   const [selectedSegmentId, setSelectedSegmentId] = useState<string | null>(null)
+
+  const [selectedDate, setSelectedDate] = useState<Date>(new Date())
+
+  // Add the date change handler:
+  const handleDateChange = useCallback((date: Date) => {
+    setSelectedDate(date)
+    setSelectedBulletin(null)
+    setSelectedItemId(null)
+    setSelectedSegmentId(null)
+    setSelectedForDeleteIds(new Set())
+  }, [])
 
   // ─── Multi-Delete State ─────────────────────────────────────────
   const [selectedForDeleteIds, setSelectedForDeleteIds] = useState<Set<string>>(new Set())
@@ -45,6 +62,8 @@ export default function ReporterPage() {
   const [addingSegmentForRowId, setAddingSegmentForRowId] = useState<string | null>(null)
   const [editingSlugRowId, setEditingSlugRowId] = useState<string | null>(null)
   const [tempSlugValue, setTempSlugValue] = useState("")
+  const [editingDurationRowId, setEditingDurationRowId] = useState<string | null>(null)
+  const [tempDurationValue, setTempDurationValue] = useState("")
 
   // ─── Drag State ─────────────────────────────────────────────────
   const [activeId, setActiveId] = useState<string | null>(null)
@@ -54,9 +73,20 @@ export default function ReporterPage() {
 
   // ─── Queries ────────────────────────────────────────────────────
 
+  // FIXED: Use /api/bulletins with date query parameter instead of /api/bulletins/today
   const { data: bulletinsData, isLoading: bulletinsLoading } = useQuery({
-    queryKey: ["bulletins", "today"],
-    queryFn: () => api.bulletins.today(),
+    queryKey: ["bulletins", "byDate", selectedDate.toISOString().split("T")[0]],
+    queryFn: async () => {
+      const dateString = selectedDate.toISOString().split("T")[0]
+      const response = await fetch(`/api/bulletins?date=${dateString}`, {
+        credentials: "include",
+      })
+      if (!response.ok) {
+        throw new Error("Failed to fetch bulletins")
+      }
+      const data = await response.json()
+      return data.data || data // Handle both { data: { bulletins } } and { bulletins } formats
+    },
   })
 
   const bulletins = bulletinsData?.bulletins || []
@@ -102,15 +132,36 @@ export default function ReporterPage() {
 
   const categories = categoriesData?.categories || []
 
+  // Fetch current user to get their role
+  const { data: userData } = useQuery({
+    queryKey: ["currentUser"],
+    queryFn: async () => {
+      const response = await fetch("/api/me", {
+        credentials: "include",
+      })
+      if (!response.ok) {
+        throw new Error("Failed to fetch user")
+      }
+      return response.json()
+    },
+  })
+
+  const currentUserRole = userData?.data?.user?.role || userData?.user?.role || "REPORTER"
+
+  // ─── Bulletin Edit Modal State ──────────────────────────────────
+  const [editingBulletin, setEditingBulletin] = useState<Bulletin | null>(null)
+  const [showEditBulletinModal, setShowEditBulletinModal] = useState(false)
+
   // ─── Mutations ──────────────────────────────────────────────────
 
+  // FIXED: Auto-generate should use selected date, not always today
   const autoGenerateMutation = useMutation({
     mutationFn: async () => {
-      const today = new Date().toISOString().split("T")[0]
-      return api.bulletins.autoGenerate(today)
+      const dateString = selectedDate.toISOString().split("T")[0]
+      return api.bulletins.autoGenerate(dateString)
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["bulletins"] })
+      queryClient.invalidateQueries({ queryKey: ["bulletins", "byDate", selectedDate.toISOString().split("T")[0]] })
       showMessage("Bulletins auto-generated successfully!")
     },
     onError: () => showMessage("Failed to auto-generate bulletins"),
@@ -186,6 +237,77 @@ export default function ReporterPage() {
     onError: (error: Error) => showMessage(error.message || "Failed to delete segment"),
   })
 
+  // Bulletin mutations
+  const deleteBulletinMutation = useMutation({
+    mutationFn: async (id: string) => {
+      const response = await fetch(`/api/bulletins/${id}`, {
+        method: "DELETE",
+        credentials: "include",
+      })
+      if (!response.ok) {
+        throw new Error("Failed to delete bulletin")
+      }
+      return response.json()
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["bulletins", "byDate", selectedDate.toISOString().split("T")[0]] })
+      showMessage("Bulletin deleted successfully")
+      if (selectedBulletin) {
+        setSelectedBulletin(null)
+        setSelectedItemId(null)
+        setSelectedSegmentId(null)
+      }
+    },
+    onError: () => showMessage("Failed to delete bulletin"),
+  })
+
+  const reorderBulletinsMutation = useMutation({
+    mutationFn: async (bulletinIds: string[]) => {
+      const response = await fetch("/api/bulletins/reorder", {
+        method: "POST",
+        credentials: "include",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ bulletinIds }),
+      })
+      if (!response.ok) {
+        throw new Error("Failed to reorder bulletins")
+      }
+      return response.json()
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["bulletins", "byDate", selectedDate.toISOString().split("T")[0]] })
+      showMessage("Bulletins reordered")
+    },
+    onError: () => showMessage("Failed to reorder bulletins"),
+  })
+
+  const updateBulletinMutation = useMutation({
+    mutationFn: async ({ id, data }: { id: string; data: BulletinUpdateData }) => {
+      const response = await fetch(`/api/bulletins/${id}`, {
+        method: "PUT",
+        credentials: "include",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(data),
+      })
+      if (!response.ok) {
+        throw new Error("Failed to update bulletin")
+      }
+      return response.json()
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["bulletins", "byDate", selectedDate.toISOString().split("T")[0]] })
+      queryClient.invalidateQueries({ queryKey: ["bulletin", selectedBulletin] })
+      showMessage("Bulletin updated successfully")
+      setShowEditBulletinModal(false)
+      setEditingBulletin(null)
+    },
+    onError: () => showMessage("Failed to update bulletin"),
+  })
+
   // ─── Computed Values ────────────────────────────────────────────
 
   const rundownItems = useMemo<RundownDisplayItem[]>(() => {
@@ -206,10 +328,12 @@ export default function ReporterPage() {
         finalAppr: row.finalApproval ? "✓" : "",
         float: row.float ? "F" : "",
         estDuration: row.estDurationDisplay || formatDuration(row.estDurationSecs),
+        estDurationSecs: row.estDurationSecs, // Add raw seconds for editing
         actual: row.actualDurationDisplay || (row.actualDurationSecs ? formatDuration(row.actualDurationSecs) : ""),
         front: row.frontTimeDisplay || "",
         cume: row.cumeTimeDisplay || formatDuration(row.cumeTimeSecs),
         lastModBy: row.lastModifiedByName || "SYSTEM",
+        createdByName: row.createdAt || row.lastModifiedByName || "SYSTEM", // Fallback to lastModifiedBy
         categoryId: row.categoryId || "",
         status: row.status,
         script: row.script,
@@ -390,6 +514,26 @@ export default function ReporterPage() {
     [updateRowMutation, showMessage]
   )
 
+  // ─── Float Toggle Handler ───────────────────────────────────────
+
+  const handleFloatDoubleClick = useCallback(
+    async (item: RundownDisplayItem) => {
+      const currentFloat = item.float === "F" || item.float === "✓"
+      const newFloat = !currentFloat
+
+      try {
+        await updateRowMutation.mutateAsync({
+          id: item.id,
+          data: { float: newFloat },
+        })
+        showMessage(newFloat ? "Story floated (will not air)" : "Story unfloated")
+      } catch {
+        showMessage("Failed to update float status")
+      }
+    },
+    [updateRowMutation, showMessage]
+  )
+
   // ─── Other Handlers ─────────────────────────────────────────────
 
   const handleSelectBulletin = useCallback((id: string) => {
@@ -399,6 +543,30 @@ export default function ReporterPage() {
     setSelectedForDeleteIds(new Set())
     setLastSelectedIndex(null)
   }, [])
+
+  // ─── Bulletin Edit/Delete/Reorder Handlers ──────────────────────
+
+  const handleEditBulletin = useCallback((bulletin: Bulletin) => {
+    setEditingBulletin(bulletin)
+    setShowEditBulletinModal(true)
+  }, [])
+
+  const handleSaveBulletin = useCallback(async (id: string, data: BulletinUpdateData) => {
+    await updateBulletinMutation.mutateAsync({ id, data })
+  }, [updateBulletinMutation])
+
+  const handleCloseEditModal = useCallback(() => {
+    setShowEditBulletinModal(false)
+    setEditingBulletin(null)
+  }, [])
+
+  const handleDeleteBulletin = useCallback((bulletinId: string) => {
+    deleteBulletinMutation.mutate(bulletinId)
+  }, [deleteBulletinMutation])
+
+  const handleReorderBulletins = useCallback((bulletinIds: string[]) => {
+    reorderBulletinsMutation.mutate(bulletinIds)
+  }, [reorderBulletinsMutation])
 
   const handleDragStart = useCallback((event: DragStartEvent) => {
     setActiveId(event.active.id as string)
@@ -443,9 +611,8 @@ export default function ReporterPage() {
 
   const handleRowClick = useCallback((item: RundownDisplayItem) => {
     setSelectedItemId(item.id)
-    if (item.segments.length > 0) {
-      setSelectedSegmentId(item.segments[0].id)
-    }
+    // Don't automatically select segment - panel only opens when segment is clicked
+    // setSelectedSegmentId is NOT called here
   }, [])
 
   const handleSegmentClick = useCallback((itemId: string, segment: Segment) => {
@@ -490,6 +657,79 @@ export default function ReporterPage() {
   const handleSlugCancel = useCallback(() => {
     setEditingSlugRowId(null)
     setTempSlugValue("")
+  }, [])
+
+  // ─── EST Duration Editing Handlers ──────────────────────────────
+
+  const handleDurationDoubleClick = useCallback((rowId: string, currentDuration: string) => {
+    setEditingDurationRowId(rowId)
+    setTempDurationValue(currentDuration)
+  }, [])
+
+  const parseDurationToSeconds = useCallback((duration: string): number | null => {
+    // Handle formats: "1:30", "90", "1:30:00"
+    const trimmed = duration.trim()
+    
+    // If just a number, treat as seconds
+    if (/^\d+$/.test(trimmed)) {
+      return parseInt(trimmed, 10)
+    }
+    
+    // Handle M:SS or MM:SS format
+    const mmssMatch = trimmed.match(/^(\d{1,2}):(\d{2})$/)
+    if (mmssMatch) {
+      const minutes = parseInt(mmssMatch[1], 10)
+      const seconds = parseInt(mmssMatch[2], 10)
+      if (seconds >= 60) return null
+      return minutes * 60 + seconds
+    }
+    
+    // Handle H:MM:SS format
+    const hmmssMatch = trimmed.match(/^(\d{1,2}):(\d{2}):(\d{2})$/)
+    if (hmmssMatch) {
+      const hours = parseInt(hmmssMatch[1], 10)
+      const minutes = parseInt(hmmssMatch[2], 10)
+      const seconds = parseInt(hmmssMatch[3], 10)
+      if (minutes >= 60 || seconds >= 60) return null
+      return hours * 3600 + minutes * 60 + seconds
+    }
+    
+    return null
+  }, [])
+
+  const handleDurationSave = useCallback(async () => {
+    if (!editingDurationRowId) {
+      setEditingDurationRowId(null)
+      setTempDurationValue("")
+      return
+    }
+
+    const seconds = parseDurationToSeconds(tempDurationValue)
+    
+    if (seconds === null || seconds < 0) {
+      showMessage("Invalid duration format. Use M:SS (e.g., 1:30)")
+      setEditingDurationRowId(null)
+      setTempDurationValue("")
+      return
+    }
+
+    try {
+      await updateRowMutation.mutateAsync({
+        id: editingDurationRowId,
+        data: { estDurationSecs: seconds },
+      })
+      showMessage("Duration updated")
+    } catch {
+      showMessage("Failed to update duration")
+    }
+
+    setEditingDurationRowId(null)
+    setTempDurationValue("")
+  }, [editingDurationRowId, tempDurationValue, parseDurationToSeconds, updateRowMutation, showMessage])
+
+  const handleDurationCancel = useCallback(() => {
+    setEditingDurationRowId(null)
+    setTempDurationValue("")
   }, [])
 
   const handleSegmentDoubleClick = useCallback((segment: Segment) => {
@@ -629,7 +869,7 @@ export default function ReporterPage() {
   )
 
   const handleClosePanel = useCallback(() => {
-    setSelectedItemId(null)
+    // Only clear segment selection, keep row selected
     setSelectedSegmentId(null)
   }, [])
 
@@ -647,85 +887,6 @@ export default function ReporterPage() {
       status: "BLANK",
     })
   }, [selectedBulletin, rows, createRowMutation])
-
-  // ─── Styles ─────────────────────────────────────────────────────
-
-  const styles = {
-    deleteSelectionBar: {
-      display: "flex",
-      alignItems: "center",
-      gap: "12px",
-      background: "rgba(231, 76, 60, 0.1)",
-      border: "1px solid rgba(231, 76, 60, 0.3)",
-      borderRadius: "6px",
-      padding: "6px 12px",
-    },
-    selectedCount: {
-      fontSize: "13px",
-      color: "#ecf0f1",
-      display: "flex",
-      alignItems: "center",
-      gap: "6px",
-    },
-    selectedCountNumber: {
-      background: "#e74c3c",
-      color: "white",
-      padding: "2px 8px",
-      borderRadius: "10px",
-      fontWeight: 600,
-      fontSize: "12px",
-    },
-    btnSelectAll: {
-      display: "flex",
-      alignItems: "center",
-      gap: "4px",
-      padding: "4px 8px",
-      background: "transparent",
-      border: "1px solid rgba(255, 255, 255, 0.2)",
-      borderRadius: "4px",
-      color: "#bdc3c7",
-      fontSize: "12px",
-      cursor: "pointer",
-      transition: "all 0.2s",
-    },
-    btnDeleteSelected: {
-      display: "flex",
-      alignItems: "center",
-      gap: "6px",
-      padding: "6px 12px",
-      background: "#e74c3c",
-      color: "white",
-      border: "none",
-      borderRadius: "4px",
-      fontSize: "13px",
-      fontWeight: 500,
-      cursor: "pointer",
-      transition: "all 0.2s",
-    },
-    btnClearSelection: {
-      display: "flex",
-      alignItems: "center",
-      justifyContent: "center",
-      width: "28px",
-      height: "28px",
-      background: "transparent",
-      border: "1px solid rgba(255, 255, 255, 0.2)",
-      borderRadius: "4px",
-      color: "#95a5a6",
-      cursor: "pointer",
-      transition: "all 0.2s",
-    },
-    reorderIndicator: {
-      fontSize: "12px",
-      color: "#f39c12",
-      marginLeft: "12px",
-    },
-    hint: {
-      fontSize: "11px",
-      color: "#7f8c8d",
-      marginLeft: "8px",
-    },
-  }
 
   // ─── Render ─────────────────────────────────────────────────────
 
@@ -839,7 +1000,13 @@ export default function ReporterPage() {
             bulletins={bulletins}
             isLoading={bulletinsLoading}
             selectedBulletinId={selectedBulletin}
+            selectedDate={selectedDate}
             onSelectBulletin={handleSelectBulletin}
+            onDateChange={handleDateChange}
+            onEditBulletin={handleEditBulletin}
+            onDeleteBulletin={handleDeleteBulletin}
+            onReorderBulletins={handleReorderBulletins}
+            userRole={currentUserRole}
           />
 
           {/* Main Rundown Area */}
@@ -863,6 +1030,8 @@ export default function ReporterPage() {
               editingSegmentId={editingSegmentId}
               tempSegmentValue={tempSegmentValue}
               addingSegmentForRowId={addingSegmentForRowId}
+              editingDurationRowId={editingDurationRowId}
+              tempDurationValue={tempDurationValue}
               onDragStart={handleDragStart}
               onDragEnd={handleDragEnd}
               onRowClick={handleRowClick}
@@ -880,6 +1049,11 @@ export default function ReporterPage() {
               onSegmentDelete={handleDeleteSegment}
               onAddSegment={handleAddSegment}
               onFinalApprDoubleClick={handleFinalApprDoubleClick}
+              onFloatDoubleClick={handleFloatDoubleClick}
+              onDurationDoubleClick={handleDurationDoubleClick}
+              onDurationChange={setTempDurationValue}
+              onDurationSave={handleDurationSave}
+              onDurationCancel={handleDurationCancel}
             />
 
             {/* Add Story Button */}
@@ -906,8 +1080,8 @@ export default function ReporterPage() {
             </div>
           </div>
 
-          {/* Right Description Panel */}
-          {selectedItem && selectedSegment && (
+          {/* Right Description Panel - Only shows when a segment is clicked */}
+          {selectedItem && selectedSegment && selectedSegmentId && (
             <DescriptionPanel
               selectedItem={selectedItem}
               selectedSegment={selectedSegment}
@@ -932,6 +1106,14 @@ export default function ReporterPage() {
       {/* Modals */}
       <BulletinCreateModal isOpen={showBulletinModal} onClose={() => setShowBulletinModal(false)} />
       
+      <BulletinEditModal
+        isOpen={showEditBulletinModal}
+        bulletin={editingBulletin}
+        onClose={handleCloseEditModal}
+        onSave={handleSaveBulletin}
+        isSaving={updateBulletinMutation.isPending}
+      />
+      
       <DeleteConfirmModal
         isOpen={showDeleteModal}
         items={selectedForDeleteItems.map((item) => ({
@@ -946,4 +1128,89 @@ export default function ReporterPage() {
       />
     </>
   )
+}
+
+// ─── Styles ─────────────────────────────────────────────────────
+
+const styles: Record<string, React.CSSProperties> = {
+  deleteSelectionBar: {
+    display: "flex",
+    alignItems: "center",
+    gap: "12px",
+    backgroundColor: "rgba(231, 76, 60, 0.1)",
+    borderWidth: "1px",
+    borderStyle: "solid",
+    borderColor: "rgba(231, 76, 60, 0.3)",
+    borderRadius: "6px",
+    padding: "6px 12px",
+  },
+  selectedCount: {
+    fontSize: "13px",
+    color: "#ecf0f1",
+    display: "flex",
+    alignItems: "center",
+    gap: "6px",
+  },
+  selectedCountNumber: {
+    backgroundColor: "#e74c3c",
+    color: "white",
+    padding: "2px 8px",
+    borderRadius: "10px",
+    fontWeight: 600,
+    fontSize: "12px",
+  },
+  btnSelectAll: {
+    display: "flex",
+    alignItems: "center",
+    gap: "4px",
+    padding: "4px 8px",
+    backgroundColor: "transparent",
+    borderWidth: "1px",
+    borderStyle: "solid",
+    borderColor: "rgba(255, 255, 255, 0.2)",
+    borderRadius: "4px",
+    color: "#bdc3c7",
+    fontSize: "12px",
+    cursor: "pointer",
+    transition: "all 0.2s",
+  },
+  btnDeleteSelected: {
+    display: "flex",
+    alignItems: "center",
+    gap: "6px",
+    padding: "6px 12px",
+    backgroundColor: "#e74c3c",
+    color: "white",
+    borderWidth: 0,
+    borderRadius: "4px",
+    fontSize: "13px",
+    fontWeight: 500,
+    cursor: "pointer",
+    transition: "all 0.2s",
+  },
+  btnClearSelection: {
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    width: "28px",
+    height: "28px",
+    backgroundColor: "transparent",
+    borderWidth: "1px",
+    borderStyle: "solid",
+    borderColor: "rgba(255, 255, 255, 0.2)",
+    borderRadius: "4px",
+    color: "#95a5a6",
+    cursor: "pointer",
+    transition: "all 0.2s",
+  },
+  reorderIndicator: {
+    fontSize: "12px",
+    color: "#f39c12",
+    marginLeft: "12px",
+  },
+  hint: {
+    fontSize: "11px",
+    color: "#7f8c8d",
+    marginLeft: "8px",
+  },
 }

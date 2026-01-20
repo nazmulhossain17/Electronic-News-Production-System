@@ -88,6 +88,7 @@ export async function GET(request: NextRequest) {
         producerName: user.name,
         deskId: bulletins.deskId,
         deskName: desks.name,
+        sortOrder: bulletins.sortOrder,
         createdAt: bulletins.createdAt,
         updatedAt: bulletins.updatedAt,
       })
@@ -95,7 +96,8 @@ export async function GET(request: NextRequest) {
       .leftJoin(user, eq(bulletins.producerId, user.id))
       .leftJoin(desks, eq(bulletins.deskId, desks.id))
       .where(conditions.length > 0 ? and(...conditions) : undefined)
-      .orderBy(asc(bulletins.airDate), asc(bulletins.startTime))
+      // Order by sortOrder first (for manual ordering), then by startTime as fallback
+      .orderBy(asc(bulletins.sortOrder), asc(bulletins.startTime))
 
     return successResponse({ bulletins: result })
   } catch (error) {
@@ -123,6 +125,21 @@ export async function POST(request: NextRequest) {
     const data = validation.data
     const airDate = new Date(`${data.airDate}T${data.startTime}:00`)
 
+    // Get max sortOrder for the day to append new bulletin at end
+    const existingBulletins = await db
+      .select({ sortOrder: bulletins.sortOrder })
+      .from(bulletins)
+      .where(
+        and(
+          gte(bulletins.airDate, new Date(data.airDate)),
+          lte(bulletins.airDate, new Date(data.airDate + "T23:59:59"))
+        )
+      )
+
+    const maxSortOrder = existingBulletins.length > 0
+      ? Math.max(...existingBulletins.map(b => b.sortOrder ?? 0))
+      : -1
+
     const [newBulletin] = await db
       .insert(bulletins)
       .values({
@@ -136,6 +153,7 @@ export async function POST(request: NextRequest) {
         producerId: data.producerId || currentUser.id,
         deskId: data.deskId,
         notes: data.notes,
+        sortOrder: maxSortOrder + 1,
         createdBy: currentUser.id,
       })
       .returning()

@@ -1,16 +1,26 @@
+// ============================================================================
+// File: components/reporter/DescriptionPanel.tsx
+// Description: Right panel showing segment details, history, and description
+// ============================================================================
+
 "use client"
 
-import { Trash2 } from "lucide-react"
-import { Category, Segment } from "@/lib/api-client"
+import { X, Trash2, Save, User, Clock, Edit3 } from "lucide-react"
+import { Segment } from "@/lib/api-client"
 import { RundownDisplayItem } from "@/types/reporter"
-import { getSegmentClass } from "@/types/helpers"
+
+interface Category {
+  id: string
+  name: string
+  color?: string
+}
 
 interface DescriptionPanelProps {
   selectedItem: RundownDisplayItem
   selectedSegment: Segment
   selectedSegmentId: string | null
   categories: Category[]
-  selectedCategoryId: string | undefined
+  selectedCategoryId?: string
   editDescription: string
   isSaving: boolean
   saveMessage: string
@@ -40,37 +50,35 @@ export default function DescriptionPanel({
   onManualSave,
   onDeleteSegment,
 }: DescriptionPanelProps) {
-  const isTempSegment = selectedSegmentId?.startsWith("temp-")
+  const isPlaceholder = selectedSegmentId?.startsWith("temp-")
 
   return (
-    <div className="description-panel">
-      <div className="panel-header">
-        <div className="panel-title">
-          {selectedItem.slug} - {selectedSegment.name}
+    <div style={styles.panel}>
+      {/* Header */}
+      <div style={styles.header}>
+        <div style={styles.headerTitle}>
+          <span style={styles.pageCode}>{selectedItem.page}</span>
+          <span style={styles.slug}>{selectedItem.slug}</span>
+          <span style={styles.segmentName}>- {selectedSegment.name}</span>
         </div>
-        <button className="close-btn" onClick={onClose}>
-          ×
+        <button style={styles.closeBtn} onClick={onClose}>
+          <X size={18} />
         </button>
       </div>
 
-      <div className="panel-content">
-        {/* Save Status */}
-        {saveMessage && (
-          <div className={`save-message ${isSaving ? "saving" : "saved"}`}>
-            {isSaving ? "Saving..." : saveMessage}
-          </div>
-        )}
-
-        {/* Segment Selector */}
-        <div className="field">
-          <label>Select Segment</label>
-          <div className="segment-selector">
+      {/* Content */}
+      <div style={styles.content}>
+        {/* Segment Selection */}
+        <div style={styles.section}>
+          <label style={styles.label}>SELECT SEGMENT</label>
+          <div style={styles.segmentTabs}>
             {selectedItem.segments.map((seg) => (
               <button
                 key={seg.id}
-                className={`segment-selector-btn ${
-                  selectedSegmentId === seg.id ? "active" : ""
-                } ${getSegmentClass(seg.name)}`}
+                style={{
+                  ...styles.segmentTab,
+                  ...(selectedSegmentId === seg.id ? styles.segmentTabActive : {}),
+                }}
                 onClick={() => onSegmentSelect(seg.id)}
               >
                 {seg.name}
@@ -79,72 +87,352 @@ export default function DescriptionPanel({
           </div>
         </div>
 
-        {/* Category */}
-        <div className="field">
-          <label>Category</label>
+        {/* Category Selection */}
+        <div style={styles.section}>
+          <label style={styles.label}>CATEGORY</label>
           <select
+            style={styles.select}
             value={selectedCategoryId || ""}
             onChange={(e) => onCategoryChange(e.target.value)}
           >
             <option value="">Select category...</option>
-            {categories.map((c) => (
-              <option key={c.id} value={c.id}>
-                {c.name}
+            {categories.map((cat) => (
+              <option key={cat.id} value={cat.id}>
+                {cat.name}
               </option>
             ))}
           </select>
         </div>
 
-        {/* Segment Description */}
-        <div className="field">
-          <label>
-            Segment Description
-            {isSaving && <span className="saving-indicator">●</span>}
-          </label>
-          <textarea
-            value={editDescription}
-            onChange={onDescriptionChange}
-            rows={12}
-            placeholder={`Enter description for ${selectedSegment.name} segment...`}
-            className="description-textarea"
-            disabled={isTempSegment}
-          />
-          {isTempSegment && (
-            <p style={{ fontSize: "11px", color: "#f39c12", marginTop: "4px" }}>
-              ⚠️ Add a real segment first to enable description editing
-            </p>
-          )}
+        {/* Creator & Last Editor Info */}
+        <div style={styles.section}>
+          <label style={styles.label}>HISTORY</label>
+          <div style={styles.historyContainer}>
+            {/* Created By */}
+            <div style={styles.historyItem}>
+              <User size={14} style={styles.historyIcon} />
+              <div style={styles.historyContent}>
+                <span style={styles.historyLabel}>Created by</span>
+                <span style={styles.historyValue}>
+                  {selectedItem.createdByName || "Unknown"}
+                </span>
+              </div>
+            </div>
+            
+            {/* Last Modified By */}
+            <div style={styles.historyItem}>
+              <Edit3 size={14} style={styles.historyIcon} />
+              <div style={styles.historyContent}>
+                <span style={styles.historyLabel}>Last edited by</span>
+                <span style={styles.historyValue}>
+                  {selectedItem.lastModBy || "SYSTEM"}
+                </span>
+              </div>
+            </div>
+
+            {/* Timing Info */}
+            <div style={styles.historyItemLast}>
+              <Clock size={14} style={styles.historyIcon} />
+              <div style={styles.historyContent}>
+                <span style={styles.historyLabel}>Duration</span>
+                <span style={styles.historyValue}>
+                  Est: {selectedItem.estDuration}
+                  {selectedItem.actual && ` • Actual: ${selectedItem.actual}`}
+                </span>
+              </div>
+            </div>
+          </div>
         </div>
 
-        {/* Delete Segment Button */}
-        {!isTempSegment && selectedItem.segments.length > 1 && (
-          <div className="field">
-            <button
-              className="btn cancel"
-              style={{ background: "#e74c3c", color: "white" }}
-              onClick={() => onDeleteSegment(selectedSegment)}
-              disabled={isDeletePending}
-            >
-              <Trash2 size={14} style={{ marginRight: "6px" }} />
-              Delete This Segment
-            </button>
+        {/* Segment Description */}
+        <div style={styles.section}>
+          <div style={styles.labelRow}>
+            <label style={styles.label}>SEGMENT DESCRIPTION</label>
+            {isSaving && <span style={styles.savingIndicator}>Saving...</span>}
+            {saveMessage && !isSaving && (
+              <span style={styles.savedIndicator}>{saveMessage}</span>
+            )}
           </div>
-        )}
+          <textarea
+            style={{
+              ...styles.textarea,
+              ...(isPlaceholder ? styles.textareaDisabled : {}),
+            }}
+            value={editDescription}
+            onChange={onDescriptionChange}
+            placeholder={
+              isPlaceholder
+                ? "Save this segment first to add description"
+                : "Enter segment description..."
+            }
+            disabled={isPlaceholder}
+          />
+        </div>
 
-        {/* Actions */}
-        <div className="actions">
+        {/* Action Buttons */}
+        <div style={styles.actions}>
           <button
-            className="btn save"
+            style={styles.saveBtn}
             onClick={onManualSave}
-            disabled={isSaving || isTempSegment}
+            disabled={isPlaceholder || isSaving}
           >
-            {isSaving ? "SAVING..." : "SAVE NOW"}
+            <Save size={14} />
+            Save
           </button>
-          <button className="btn cancel" onClick={onClose}>
-            CLOSE
+          <button
+            style={{
+              ...styles.deleteBtn,
+              ...(isPlaceholder || selectedItem.segments.length <= 1
+                ? styles.deleteBtnDisabled
+                : {}),
+            }}
+            onClick={() => onDeleteSegment(selectedSegment)}
+            disabled={isPlaceholder || isDeletePending || selectedItem.segments.length <= 1}
+            title={
+              selectedItem.segments.length <= 1
+                ? "Cannot delete the last segment"
+                : "Delete this segment"
+            }
+          >
+            <Trash2 size={14} />
+            {isDeletePending ? "Deleting..." : "Delete Segment"}
           </button>
         </div>
       </div>
     </div>
   )
+}
+
+const styles: Record<string, React.CSSProperties> = {
+  panel: {
+    width: "320px",
+    backgroundColor: "#2c3e50",
+    borderLeftWidth: "1px",
+    borderLeftStyle: "solid",
+    borderLeftColor: "#34495e",
+    display: "flex",
+    flexDirection: "column",
+    height: "100%",
+  },
+  header: {
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "space-between",
+    padding: "12px 16px",
+    borderBottomWidth: "1px",
+    borderBottomStyle: "solid",
+    borderBottomColor: "#34495e",
+    backgroundColor: "rgba(0, 0, 0, 0.1)",
+  },
+  headerTitle: {
+    display: "flex",
+    alignItems: "center",
+    gap: "8px",
+    fontSize: "14px",
+    fontWeight: 600,
+    color: "#ecf0f1",
+    overflow: "hidden",
+    flex: 1,
+  },
+  pageCode: {
+    backgroundColor: "#3498db",
+    color: "white",
+    padding: "2px 6px",
+    borderRadius: "4px",
+    fontSize: "12px",
+    fontWeight: 600,
+    flexShrink: 0,
+  },
+  slug: {
+    overflow: "hidden",
+    textOverflow: "ellipsis",
+    whiteSpace: "nowrap",
+  },
+  segmentName: {
+    color: "#f39c12",
+    fontSize: "12px",
+    flexShrink: 0,
+  },
+  closeBtn: {
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    width: "28px",
+    height: "28px",
+    backgroundColor: "transparent",
+    borderWidth: 0,
+    borderRadius: "4px",
+    color: "#95a5a6",
+    cursor: "pointer",
+    flexShrink: 0,
+  },
+  content: {
+    flex: 1,
+    padding: "16px",
+    overflowY: "auto",
+    display: "flex",
+    flexDirection: "column",
+  },
+  section: {
+    marginBottom: "20px",
+  },
+  label: {
+    display: "block",
+    fontSize: "11px",
+    fontWeight: 600,
+    color: "#7f8c8d",
+    marginBottom: "8px",
+    textTransform: "uppercase",
+    letterSpacing: "0.5px",
+  },
+  labelRow: {
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginBottom: "8px",
+  },
+  savingIndicator: {
+    fontSize: "11px",
+    color: "#f39c12",
+  },
+  savedIndicator: {
+    fontSize: "11px",
+    color: "#27ae60",
+  },
+  segmentTabs: {
+    display: "flex",
+    flexWrap: "wrap",
+    gap: "8px",
+  },
+  segmentTab: {
+    padding: "6px 12px",
+    backgroundColor: "transparent",
+    borderWidth: "1px",
+    borderStyle: "solid",
+    borderColor: "#4a5568",
+    borderRadius: "4px",
+    color: "#bdc3c7",
+    fontSize: "12px",
+    cursor: "pointer",
+    transition: "all 0.2s",
+  },
+  segmentTabActive: {
+    backgroundColor: "#f39c12",
+    borderColor: "#f39c12",
+    color: "white",
+  },
+  select: {
+    width: "100%",
+    padding: "10px 12px",
+    backgroundColor: "#34495e",
+    borderWidth: "1px",
+    borderStyle: "solid",
+    borderColor: "#4a5568",
+    borderRadius: "4px",
+    color: "#ecf0f1",
+    fontSize: "13px",
+    cursor: "pointer",
+  },
+  historyContainer: {
+    backgroundColor: "#34495e",
+    borderRadius: "6px",
+    padding: "4px 12px",
+  },
+  historyItem: {
+    display: "flex",
+    alignItems: "flex-start",
+    gap: "10px",
+    paddingTop: "10px",
+    paddingBottom: "10px",
+    borderBottomWidth: "1px",
+    borderBottomStyle: "solid",
+    borderBottomColor: "#4a5568",
+  },
+  historyItemLast: {
+    display: "flex",
+    alignItems: "flex-start",
+    gap: "10px",
+    paddingTop: "10px",
+    paddingBottom: "10px",
+  },
+  historyIcon: {
+    color: "#7f8c8d",
+    marginTop: "2px",
+    flexShrink: 0,
+  },
+  historyContent: {
+    display: "flex",
+    flexDirection: "column",
+    gap: "2px",
+    flex: 1,
+    minWidth: 0,
+  },
+  historyLabel: {
+    fontSize: "10px",
+    color: "#7f8c8d",
+    textTransform: "uppercase",
+  },
+  historyValue: {
+    fontSize: "13px",
+    color: "#ecf0f1",
+    fontWeight: 500,
+  },
+  textarea: {
+    width: "100%",
+    minHeight: "120px",
+    padding: "12px",
+    backgroundColor: "#34495e",
+    borderWidth: "1px",
+    borderStyle: "solid",
+    borderColor: "#4a5568",
+    borderRadius: "4px",
+    color: "#ecf0f1",
+    fontSize: "13px",
+    resize: "vertical",
+    fontFamily: "inherit",
+  },
+  textareaDisabled: {
+    opacity: 0.6,
+    cursor: "not-allowed",
+  },
+  actions: {
+    display: "flex",
+    gap: "10px",
+    marginTop: "auto",
+    paddingTop: "16px",
+  },
+  saveBtn: {
+    flex: 1,
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: "6px",
+    padding: "10px 16px",
+    backgroundColor: "#27ae60",
+    borderWidth: 0,
+    borderRadius: "4px",
+    color: "white",
+    fontSize: "13px",
+    fontWeight: 500,
+    cursor: "pointer",
+  },
+  deleteBtn: {
+    flex: 1,
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: "6px",
+    padding: "10px 16px",
+    backgroundColor: "#e74c3c",
+    borderWidth: 0,
+    borderRadius: "4px",
+    color: "white",
+    fontSize: "13px",
+    fontWeight: 500,
+    cursor: "pointer",
+  },
+  deleteBtnDisabled: {
+    opacity: 0.5,
+    cursor: "not-allowed",
+  },
 }

@@ -1,3 +1,11 @@
+// ============================================================================
+// File: types/reporter.ts
+// Description: Type definitions for reporter interface components
+// ============================================================================
+
+// types/reporter.ts
+// Updated RundownDisplayItem type with creator info
+
 import { Segment } from "@/lib/api-client"
 
 export interface RundownDisplayItem {
@@ -9,17 +17,17 @@ export interface RundownDisplayItem {
   finalAppr: string
   float: string
   estDuration: string
+  estDurationSecs?: number // Add raw seconds for editing
   actual: string
   front: string
   cume: string
   lastModBy: string
+  createdByName?: string  // NEW: Creator name
   categoryId: string
   status: string
-  script?: string
-  notes?: string
+  script?: string | null
+  notes?: string | null
   rowType: string
-  blockCode: string
+  blockCode?: string
   sortOrder: number
 }
-
-export type SegmentType = Segment["type"]

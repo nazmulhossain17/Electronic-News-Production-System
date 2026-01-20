@@ -1,3 +1,8 @@
+// ============================================================================
+// File: components/reporter/SortableRow.tsx
+// Description: Individual sortable row component with editable fields
+// ============================================================================
+
 "use client"
 
 import { useSortable } from "@dnd-kit/sortable"
@@ -16,8 +21,11 @@ interface SortableRowProps {
   editingSegmentId: string | null
   tempSegmentValue: string
   addingSegmentForRowId: string | null
+  editingDurationRowId: string | null
+  tempDurationValue: string
   slugInputRef: React.RefObject<HTMLInputElement | null>
   segmentInputRef: React.RefObject<HTMLInputElement | null>
+  durationInputRef: React.RefObject<HTMLInputElement | null>
   onRowClick: (item: RundownDisplayItem) => void
   onPgClick: (item: RundownDisplayItem, e: React.MouseEvent) => void
   onSlugDoubleClick: (rowId: string, slug: string) => void
@@ -31,7 +39,12 @@ interface SortableRowProps {
   onSegmentBlur: (isNew: boolean, rowId: string) => void
   onSegmentDelete: (segment: Segment) => void
   onAddSegment: (rowId: string) => void
-  onFinalApprDoubleClick: (item: RundownDisplayItem) => void  // NEW
+  onFinalApprDoubleClick: (item: RundownDisplayItem) => void
+  onFloatDoubleClick: (item: RundownDisplayItem) => void
+  onDurationDoubleClick: (rowId: string, currentDuration: string) => void
+  onDurationChange: (value: string) => void
+  onDurationKeyDown: (e: React.KeyboardEvent) => void
+  onDurationBlur: () => void
 }
 
 // Segment color mapping
@@ -63,8 +76,11 @@ export default function SortableRow({
   editingSegmentId,
   tempSegmentValue,
   addingSegmentForRowId,
+  editingDurationRowId,
+  tempDurationValue,
   slugInputRef,
   segmentInputRef,
+  durationInputRef,
   onRowClick,
   onPgClick,
   onSlugDoubleClick,
@@ -79,6 +95,11 @@ export default function SortableRow({
   onSegmentDelete,
   onAddSegment,
   onFinalApprDoubleClick,
+  onFloatDoubleClick,
+  onDurationDoubleClick,
+  onDurationChange,
+  onDurationKeyDown,
+  onDurationBlur,
 }: SortableRowProps) {
   const {
     attributes,
@@ -90,6 +111,7 @@ export default function SortableRow({
   } = useSortable({ id: item.id })
 
   const isApproved = item.finalAppr === "✓"
+  const isFloated = item.float === "F" || item.float === "✓"
 
   // ─── Styles ─────────────────────────────────────────────────────
 
@@ -99,12 +121,16 @@ export default function SortableRow({
     opacity: isDragging ? 0.5 : 1,
     backgroundColor: isDragging
       ? "rgba(52, 152, 219, 0.1)"
+      : isFloated
+      ? "rgba(139, 0, 0, 0.25)"  // Dark red background for floated rows
       : isSelectedForDelete
       ? "rgba(231, 76, 60, 0.15)"
       : isSelected
       ? "rgba(52, 152, 219, 0.15)"
       : "transparent",
-    borderLeft: isSelectedForDelete
+    borderLeft: isFloated
+      ? "3px solid #8b0000"  // Dark red border for floated
+      : isSelectedForDelete
       ? "3px solid #e74c3c"
       : isSelected
       ? "3px solid #3498db"
@@ -280,6 +306,47 @@ export default function SortableRow({
       alignItems: "center",
       justifyContent: "center",
     },
+    floatCell: {
+      padding: "8px",
+      fontSize: "12px",
+      borderBottom: cellBorder,
+      borderRight: cellBorder,
+      verticalAlign: "middle" as const,
+      textAlign: "center" as const,
+      cursor: "pointer",
+      userSelect: "none" as const,
+      transition: "background 0.2s",
+    },
+    floatIcon: {
+      display: "flex",
+      alignItems: "center",
+      justifyContent: "center",
+    },
+    durationCell: {
+      padding: "8px",
+      fontSize: "12px",
+      borderBottom: cellBorder,
+      borderRight: cellBorder,
+      verticalAlign: "middle" as const,
+      cursor: "pointer",
+      transition: "background 0.2s",
+    },
+    durationText: {
+      display: "block",
+      padding: "2px 4px",
+    },
+    durationInput: {
+      width: "60px",
+      padding: "4px 6px",
+      fontSize: "12px",
+      fontWeight: 500,
+      background: "#1a1a2e",
+      border: "1px solid #3498db",
+      borderRadius: "3px",
+      color: "#ecf0f1",
+      outline: "none",
+      textAlign: "center" as const,
+    },
   }
 
   return (
@@ -349,6 +416,7 @@ export default function SortableRow({
             onBlur={onSlugBlur}
             style={styles.slugInput}
             onClick={(e) => e.stopPropagation()}
+            autoFocus
           />
         ) : (
           <span style={styles.slugText}>{item.slug || "(empty)"}</span>
@@ -370,6 +438,7 @@ export default function SortableRow({
                   onBlur={() => onSegmentBlur(false, item.id)}
                   style={styles.segmentInput}
                   maxLength={12}
+                  autoFocus
                 />
               ) : (
                 <>
@@ -420,6 +489,7 @@ export default function SortableRow({
                 style={styles.segmentInput}
                 maxLength={12}
                 placeholder="TYPE..."
+                autoFocus
               />
             </div>
           ) : (
@@ -469,8 +539,68 @@ export default function SortableRow({
         ) : null}
       </td>
 
-      <td style={styles.td}>{item.float}</td>
-      <td style={styles.td}>{item.estDuration}</td>
+      {/* Float - Double click to toggle (stops the row from airing) */}
+      <td
+        style={{
+          ...styles.floatCell,
+          backgroundColor: isFloated ? "rgba(139, 0, 0, 0.4)" : "transparent",
+        }}
+        onDoubleClick={(e) => {
+          e.stopPropagation()
+          onFloatDoubleClick(item)
+        }}
+        onMouseEnter={(e) => {
+          if (!isFloated) {
+            e.currentTarget.style.background = "rgba(139, 0, 0, 0.2)"
+          }
+        }}
+        onMouseLeave={(e) => {
+          if (!isFloated) {
+            e.currentTarget.style.background = "transparent"
+          }
+        }}
+        title="Double-click to float/unfloat (floated stories won't air)"
+      >
+        {isFloated ? (
+          <div style={styles.floatIcon}>
+            <Check size={16} color="#fff" strokeWidth={3} />
+          </div>
+        ) : null}
+      </td>
+      
+      {/* Editable EST Duration Cell */}
+      <td
+        style={styles.durationCell}
+        onDoubleClick={(e) => {
+          e.stopPropagation()
+          onDurationDoubleClick(item.id, item.estDuration)
+        }}
+        onMouseEnter={(e) => {
+          e.currentTarget.style.background = "rgba(52, 152, 219, 0.1)"
+        }}
+        onMouseLeave={(e) => {
+          e.currentTarget.style.background = "transparent"
+        }}
+        title="Double-click to edit (format: M:SS)"
+      >
+        {editingDurationRowId === item.id ? (
+          <input
+            ref={durationInputRef}
+            type="text"
+            value={tempDurationValue}
+            onChange={(e) => onDurationChange(e.target.value)}
+            onKeyDown={onDurationKeyDown}
+            onBlur={onDurationBlur}
+            style={styles.durationInput}
+            onClick={(e) => e.stopPropagation()}
+            placeholder="M:SS"
+            autoFocus
+          />
+        ) : (
+          <span style={styles.durationText}>{item.estDuration}</span>
+        )}
+      </td>
+
       <td style={styles.td}>{item.actual}</td>
       <td style={styles.td}>{item.front}</td>
       <td style={styles.td}>{item.cume}</td>

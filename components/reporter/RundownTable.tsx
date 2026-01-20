@@ -1,3 +1,9 @@
+// ============================================================================
+// File: components/reporter/RundownTable.tsx
+// Description: Rundown table with drag-and-drop, inline editing for slug,
+//              segments, and EST duration
+// ============================================================================
+
 "use client"
 
 import { useRef } from "react"
@@ -35,6 +41,8 @@ interface RundownTableProps {
   editingSegmentId: string | null
   tempSegmentValue: string
   addingSegmentForRowId: string | null
+  editingDurationRowId: string | null
+  tempDurationValue: string
   onDragStart: (event: DragStartEvent) => void
   onDragEnd: (event: DragEndEvent) => void
   onRowClick: (item: RundownDisplayItem) => void
@@ -51,7 +59,12 @@ interface RundownTableProps {
   onSegmentCancel: () => void
   onSegmentDelete: (segment: Segment) => void
   onAddSegment: (rowId: string) => void
-  onFinalApprDoubleClick: (item: RundownDisplayItem) => void  // NEW
+  onFinalApprDoubleClick: (item: RundownDisplayItem) => void
+  onFloatDoubleClick: (item: RundownDisplayItem) => void
+  onDurationDoubleClick: (rowId: string, currentDuration: string) => void
+  onDurationChange: (value: string) => void
+  onDurationSave: () => void
+  onDurationCancel: () => void
 }
 
 // Common border style
@@ -69,6 +82,8 @@ export default function RundownTable({
   editingSegmentId,
   tempSegmentValue,
   addingSegmentForRowId,
+  editingDurationRowId,
+  tempDurationValue,
   onDragStart,
   onDragEnd,
   onRowClick,
@@ -86,9 +101,15 @@ export default function RundownTable({
   onSegmentDelete,
   onAddSegment,
   onFinalApprDoubleClick,
+  onFloatDoubleClick,
+  onDurationDoubleClick,
+  onDurationChange,
+  onDurationSave,
+  onDurationCancel,
 }: RundownTableProps) {
   const slugInputRef = useRef<HTMLInputElement>(null)
   const segmentInputRef = useRef<HTMLInputElement>(null)
+  const durationInputRef = useRef<HTMLInputElement>(null)
 
   const sensors = useSensors(
     useSensor(PointerSensor, {
@@ -102,8 +123,6 @@ export default function RundownTable({
   )
 
   const activeItem = items.find((item) => item.id === activeId)
-
-  
 
   // ─── Styles ─────────────────────────────────────────────────────
 
@@ -220,8 +239,11 @@ export default function RundownTable({
                     editingSegmentId={editingSegmentId}
                     tempSegmentValue={tempSegmentValue}
                     addingSegmentForRowId={addingSegmentForRowId}
+                    editingDurationRowId={editingDurationRowId}
+                    tempDurationValue={tempDurationValue}
                     slugInputRef={slugInputRef}
                     segmentInputRef={segmentInputRef}
+                    durationInputRef={durationInputRef}
                     onRowClick={onRowClick}
                     onPgClick={onPgClick}
                     onSlugDoubleClick={onSlugDoubleClick}
@@ -260,6 +282,18 @@ export default function RundownTable({
                     onSegmentDelete={onSegmentDelete}
                     onAddSegment={onAddSegment}
                     onFinalApprDoubleClick={onFinalApprDoubleClick}
+                    onFloatDoubleClick={onFloatDoubleClick}
+                    onDurationDoubleClick={onDurationDoubleClick}
+                    onDurationChange={onDurationChange}
+                    onDurationKeyDown={(e) => {
+                      if (e.key === "Enter") {
+                        e.preventDefault()
+                        onDurationSave()
+                      } else if (e.key === "Escape") {
+                        onDurationCancel()
+                      }
+                    }}
+                    onDurationBlur={onDurationSave}
                   />
                 ))}
               </SortableContext>

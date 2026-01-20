@@ -1,6 +1,4 @@
 import { NextRequest } from "next/server"
-import { db } from "@/lib/db"
-import { user, appUsers, newsDesks } from "@/lib/schema"
 import { eq } from "drizzle-orm"
 import { requireAuth } from "@/lib/auth"
 import {
@@ -10,6 +8,8 @@ import {
   validationErrorResponse,
 } from "@/lib/api-response"
 import { z } from "zod"
+import db from "@/db"
+import { appUsers, user, desks } from "@/db/schema" // Fixed: import 'desks' not 'newsDesks'
 
 const updateProfileSchema = z.object({
   displayName: z.string().max(50).optional(),
@@ -39,13 +39,13 @@ export async function GET(request: NextRequest) {
         role: appUsers.role,
         isActive: appUsers.isActive,
         deskId: appUsers.deskId,
-        deskName: newsDesks.name,
-        deskCode: newsDesks.code,
+        deskName: desks.name,    // Fixed: use 'desks' not 'newsDesks'
+        deskCode: desks.code,    // Fixed: use 'desks' not 'newsDesks'
         createdAt: user.createdAt,
       })
       .from(user)
       .leftJoin(appUsers, eq(user.id, appUsers.userId))
-      .leftJoin(newsDesks, eq(appUsers.deskId, newsDesks.id))
+      .leftJoin(desks, eq(appUsers.deskId, desks.id))  // Fixed: use 'desks' not 'newsDesks'
       .where(eq(user.id, currentUser.id))
       .limit(1)
 

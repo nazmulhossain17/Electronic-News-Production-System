@@ -289,6 +289,7 @@ export const bulletins = pgTable(
     // Assignment
     producerId: text("producer_id").references(() => user.id),
     deskId: uuid("desk_id").references(() => desks.id),
+    sortOrder: integer("sort_order").default(0),
 
     // Notes
     notes: text("notes"),
