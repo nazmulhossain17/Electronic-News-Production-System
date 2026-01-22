@@ -32,6 +32,7 @@ import {
   GripVertical,
   Edit2,
   Trash2,
+  Download,
 } from "lucide-react"
 import { Bulletin } from "@/lib/api-client"
 import { getBulletinStatusClass } from "@/types/helpers"
@@ -52,6 +53,7 @@ interface BulletinsSidebarProps {
   onDateChange: (date: Date) => void
   onEditBulletin?: (bulletin: Bulletin) => void
   onDeleteBulletin?: (bulletinId: string) => void
+  onDownloadBulletin?: (bulletinId: string) => void
   onReorderBulletins?: (bulletinIds: string[]) => void
   producers?: { id: string; name: string }[]
   desks?: { id: string; name: string }[]
@@ -65,6 +67,7 @@ interface SortableBulletinItemProps {
   onSelect: (id: string) => void
   onEdit?: (bulletin: Bulletin) => void
   onDelete?: (id: string) => void
+  onDownload?: (id: string) => void
   canEdit: boolean
 }
 
@@ -74,6 +77,7 @@ function SortableBulletinItem({
   onSelect,
   onEdit,
   onDelete,
+  onDownload,
   canEdit,
 }: SortableBulletinItemProps) {
   const [showActions, setShowActions] = useState(false)
@@ -107,13 +111,18 @@ function SortableBulletinItem({
     setShowActions(false)
   }
 
+  const handleDownload = (e: React.MouseEvent) => {
+    e.stopPropagation()
+    onDownload?.(bulletin.id)
+  }
+
   return (
     <div
       ref={setNodeRef}
       style={style}
       className={`bulletin-item ${isSelected ? "active" : ""}`}
       onClick={() => onSelect(bulletin.id)}
-      onMouseEnter={() => canEdit && setShowActions(true)}
+      onMouseEnter={() => setShowActions(true)}
       onMouseLeave={() => setShowActions(false)}
     >
       {/* Drag Handle - Only show for admin/editor */}
@@ -141,38 +150,57 @@ function SortableBulletinItem({
         </div>
       </div>
 
-      {/* Action Buttons - Only show for admin/editor */}
-      {canEdit && showActions && (
+      {/* Action Buttons - Show on hover */}
+      {showActions && (
         <div style={itemStyles.actions}>
+          {canEdit && (
+            <>
+              <button
+                style={itemStyles.actionBtn}
+                onClick={handleEdit}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.backgroundColor = "#2980b9"
+                  e.currentTarget.style.transform = "scale(1.1)"
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.backgroundColor = "#3498db"
+                  e.currentTarget.style.transform = "scale(1)"
+                }}
+                title="Edit bulletin"
+              >
+                <Edit2 size={14} />
+              </button>
+              <button
+                style={{ ...itemStyles.actionBtn, ...itemStyles.deleteBtn }}
+                onClick={handleDelete}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.backgroundColor = "#c0392b"
+                  e.currentTarget.style.transform = "scale(1.1)"
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.backgroundColor = "#e74c3c"
+                  e.currentTarget.style.transform = "scale(1)"
+                }}
+                title="Delete bulletin"
+              >
+                <Trash2 size={14} />
+              </button>
+            </>
+          )}
           <button
-            style={itemStyles.actionBtn}
-            onClick={handleEdit}
+            style={{ ...itemStyles.actionBtn, ...itemStyles.downloadBtn }}
+            onClick={handleDownload}
             onMouseEnter={(e) => {
-              e.currentTarget.style.backgroundColor = "#2980b9"
+              e.currentTarget.style.backgroundColor = "#1e8449"
               e.currentTarget.style.transform = "scale(1.1)"
             }}
             onMouseLeave={(e) => {
-              e.currentTarget.style.backgroundColor = "#3498db"
+              e.currentTarget.style.backgroundColor = "#27ae60"
               e.currentTarget.style.transform = "scale(1)"
             }}
-            title="Edit bulletin"
+            title="Download as RTF"
           >
-            <Edit2 size={14} />
-          </button>
-          <button
-            style={{ ...itemStyles.actionBtn, ...itemStyles.deleteBtn }}
-            onClick={handleDelete}
-            onMouseEnter={(e) => {
-              e.currentTarget.style.backgroundColor = "#c0392b"
-              e.currentTarget.style.transform = "scale(1.1)"
-            }}
-            onMouseLeave={(e) => {
-              e.currentTarget.style.backgroundColor = "#e74c3c"
-              e.currentTarget.style.transform = "scale(1)"
-            }}
-            title="Delete bulletin"
-          >
-            <Trash2 size={14} />
+            <Download size={14} />
           </button>
         </div>
       )}
@@ -208,6 +236,7 @@ export default function BulletinsSidebar({
   onDateChange,
   onEditBulletin,
   onDeleteBulletin,
+  onDownloadBulletin,
   onReorderBulletins,
   producers = [],
   desks = [],
@@ -449,6 +478,7 @@ export default function BulletinsSidebar({
                   onSelect={onSelectBulletin}
                   onEdit={onEditBulletin}
                   onDelete={onDeleteBulletin}
+                  onDownload={onDownloadBulletin}
                   canEdit={canEdit}
                 />
               ))}
@@ -459,24 +489,18 @@ export default function BulletinsSidebar({
             </DragOverlay>
           </DndContext>
         ) : (
-          // Non-draggable list for reporters/producers
+          // Non-draggable list for reporters/producers - still shows download button
           filteredBulletins.map((b) => (
-            <div
+            <SortableBulletinItem
               key={b.id}
-              className={`bulletin-item ${selectedBulletinId === b.id ? "active" : ""}`}
-              onClick={() => onSelectBulletin(b.id)}
-            >
-              <div className="bulletin-title">{b.title}</div>
-              <div className="bulletin-meta">
-                <span className="bulletin-time">{b.startTime}</span>
-                <span className={`bulletin-status ${getBulletinStatusClass(b.status)}`}>
-                  {b.status}
-                </span>
-              </div>
-              <div className="bulletin-stats">
-                {b.storyCount || 0} stories • {b.progress || 0}% ready
-              </div>
-            </div>
+              bulletin={b}
+              isSelected={selectedBulletinId === b.id}
+              onSelect={onSelectBulletin}
+              onEdit={onEditBulletin}
+              onDelete={onDeleteBulletin}
+              onDownload={onDownloadBulletin}
+              canEdit={false}
+            />
           ))
         )}
       </div>
@@ -677,6 +701,9 @@ const itemStyles: Record<string, React.CSSProperties> = {
   },
   deleteBtn: {
     backgroundColor: "#e74c3c",
+  },
+  downloadBtn: {
+    backgroundColor: "#27ae60",
   },
   dragOverlay: {
     display: "flex",

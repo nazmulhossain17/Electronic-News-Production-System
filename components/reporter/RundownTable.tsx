@@ -27,6 +27,7 @@ import {
 import { Segment } from "@/lib/api-client"
 import { RundownDisplayItem } from "@/types/reporter"
 import SortableRow from "./SortableRow"
+import MergedRow from "./MergedRow"
 import DragOverlayRow from "./DragOverlayRow"
 
 interface RundownTableProps {
@@ -43,6 +44,13 @@ interface RundownTableProps {
   addingSegmentForRowId: string | null
   editingDurationRowId: string | null
   tempDurationValue: string
+  // New editing states
+  editingProducerRowId: string | null
+  tempProducerValue: string
+  editingActualRowId: string | null
+  tempActualValue: string
+  editingFrontRowId: string | null
+  tempFrontValue: string
   onDragStart: (event: DragStartEvent) => void
   onDragEnd: (event: DragEndEvent) => void
   onRowClick: (item: RundownDisplayItem) => void
@@ -65,6 +73,19 @@ interface RundownTableProps {
   onDurationChange: (value: string) => void
   onDurationSave: () => void
   onDurationCancel: () => void
+  // New handlers
+  onProducerDoubleClick: (rowId: string, currentValue: string) => void
+  onProducerChange: (value: string) => void
+  onProducerSave: () => void
+  onProducerCancel: () => void
+  onActualDoubleClick: (rowId: string, currentValue: string) => void
+  onActualChange: (value: string) => void
+  onActualSave: () => void
+  onActualCancel: () => void
+  onFrontDoubleClick: (rowId: string, currentValue: string) => void
+  onFrontChange: (value: string) => void
+  onFrontSave: () => void
+  onFrontCancel: () => void
 }
 
 // Common border style
@@ -84,6 +105,12 @@ export default function RundownTable({
   addingSegmentForRowId,
   editingDurationRowId,
   tempDurationValue,
+  editingProducerRowId,
+  tempProducerValue,
+  editingActualRowId,
+  tempActualValue,
+  editingFrontRowId,
+  tempFrontValue,
   onDragStart,
   onDragEnd,
   onRowClick,
@@ -106,10 +133,25 @@ export default function RundownTable({
   onDurationChange,
   onDurationSave,
   onDurationCancel,
+  onProducerDoubleClick,
+  onProducerChange,
+  onProducerSave,
+  onProducerCancel,
+  onActualDoubleClick,
+  onActualChange,
+  onActualSave,
+  onActualCancel,
+  onFrontDoubleClick,
+  onFrontChange,
+  onFrontSave,
+  onFrontCancel,
 }: RundownTableProps) {
   const slugInputRef = useRef<HTMLInputElement>(null)
   const segmentInputRef = useRef<HTMLInputElement>(null)
   const durationInputRef = useRef<HTMLInputElement>(null)
+  const producerInputRef = useRef<HTMLInputElement>(null)
+  const actualInputRef = useRef<HTMLInputElement>(null)
+  const frontInputRef = useRef<HTMLInputElement>(null)
 
   const sensors = useSensors(
     useSensor(PointerSensor, {
@@ -123,6 +165,31 @@ export default function RundownTable({
   )
 
   const activeItem = items.find((item) => item.id === activeId)
+
+  // Group consecutive items with the same slug
+  const groupedItems = items.reduce<Array<{ items: RundownDisplayItem[]; key: string }>>((acc, item) => {
+    const lastGroup = acc[acc.length - 1]
+    const itemSlug = item.slug?.trim().toUpperCase() || ""
+    
+    // If slug is empty or "(empty)", don't merge
+    if (!itemSlug || itemSlug === "(EMPTY)") {
+      acc.push({ items: [item], key: item.id })
+      return acc
+    }
+    
+    // Check if this item can be merged with the last group
+    if (lastGroup && lastGroup.items.length > 0) {
+      const lastSlug = lastGroup.items[0].slug?.trim().toUpperCase() || ""
+      if (lastSlug === itemSlug) {
+        lastGroup.items.push(item)
+        return acc
+      }
+    }
+    
+    // Start a new group
+    acc.push({ items: [item], key: item.id })
+    return acc
+  }, [])
 
   // ─── Styles ─────────────────────────────────────────────────────
 
@@ -227,75 +294,197 @@ export default function RundownTable({
                 items={items.map((item) => item.id)}
                 strategy={verticalListSortingStrategy}
               >
-                {items.map((item) => (
-                  <SortableRow
-                    key={item.id}
-                    item={item}
-                    isSelected={selectedItemId === item.id}
-                    isSelectedForDelete={selectedForDeleteIds.has(item.id)}
-                    selectedSegmentId={selectedSegmentId}
-                    editingSlugRowId={editingSlugRowId}
-                    tempSlugValue={tempSlugValue}
-                    editingSegmentId={editingSegmentId}
-                    tempSegmentValue={tempSegmentValue}
-                    addingSegmentForRowId={addingSegmentForRowId}
-                    editingDurationRowId={editingDurationRowId}
-                    tempDurationValue={tempDurationValue}
-                    slugInputRef={slugInputRef}
-                    segmentInputRef={segmentInputRef}
-                    durationInputRef={durationInputRef}
-                    onRowClick={onRowClick}
-                    onPgClick={onPgClick}
-                    onSlugDoubleClick={onSlugDoubleClick}
-                    onSlugChange={onSlugChange}
-                    onSlugKeyDown={(e) => {
-                      if (e.key === "Enter") {
-                        e.preventDefault()
-                        onSlugSave()
-                      } else if (e.key === "Escape") {
-                        onSlugCancel()
-                      }
-                    }}
-                    onSlugBlur={onSlugSave}
-                    onSegmentClick={onSegmentClick}
-                    onSegmentDoubleClick={onSegmentDoubleClick}
-                    onSegmentChange={onSegmentChange}
-                    onSegmentKeyDown={(e, isNew, rowId) => {
-                      if (e.key === "Enter") {
-                        e.preventDefault()
+                {groupedItems.map((group) => {
+                  const primaryItem = group.items[0]
+                  const isGroupSelected = group.items.some(item => selectedItemId === item.id)
+                  const isGroupSelectedForDelete = group.items.some(item => selectedForDeleteIds.has(item.id))
+                  
+                  // Use MergedRow for groups with multiple items, SortableRow for single items
+                  if (group.items.length > 1) {
+                    return (
+                      <MergedRow
+                        key={group.key}
+                        items={group.items}
+                        isSelected={isGroupSelected}
+                        isSelectedForDelete={isGroupSelectedForDelete}
+                        selectedSegmentId={selectedSegmentId}
+                        editingSlugRowId={editingSlugRowId}
+                        tempSlugValue={tempSlugValue}
+                        editingSegmentId={editingSegmentId}
+                        tempSegmentValue={tempSegmentValue}
+                        addingSegmentForRowId={addingSegmentForRowId}
+                        editingDurationRowId={editingDurationRowId}
+                        tempDurationValue={tempDurationValue}
+                        slugInputRef={slugInputRef}
+                        segmentInputRef={segmentInputRef}
+                        durationInputRef={durationInputRef}
+                        onRowClick={onRowClick}
+                        onPgClick={onPgClick}
+                        onSlugDoubleClick={onSlugDoubleClick}
+                        onSlugChange={onSlugChange}
+                        onSlugKeyDown={(e) => {
+                          if (e.key === "Enter") {
+                            e.preventDefault()
+                            onSlugSave()
+                          } else if (e.key === "Escape") {
+                            onSlugCancel()
+                          }
+                        }}
+                        onSlugBlur={onSlugSave}
+                        onSegmentClick={onSegmentClick}
+                        onSegmentDoubleClick={onSegmentDoubleClick}
+                        onSegmentChange={onSegmentChange}
+                        onSegmentKeyDown={(e, isNew, rowId) => {
+                          if (e.key === "Enter") {
+                            e.preventDefault()
+                            if (isNew) {
+                              onSegmentSaveNew(rowId)
+                            } else {
+                              onSegmentSave()
+                            }
+                          } else if (e.key === "Escape") {
+                            onSegmentCancel()
+                          }
+                        }}
+                        onSegmentBlur={(isNew, rowId) => {
+                          if (isNew) {
+                            onSegmentSaveNew(rowId)
+                          } else {
+                            onSegmentSave()
+                          }
+                        }}
+                        onSegmentDelete={onSegmentDelete}
+                        onAddSegment={onAddSegment}
+                        onFinalApprDoubleClick={onFinalApprDoubleClick}
+                        onFloatDoubleClick={onFloatDoubleClick}
+                        onDurationDoubleClick={onDurationDoubleClick}
+                        onDurationChange={onDurationChange}
+                        onDurationKeyDown={(e) => {
+                          if (e.key === "Enter") {
+                            e.preventDefault()
+                            onDurationSave()
+                          } else if (e.key === "Escape") {
+                            onDurationCancel()
+                          }
+                        }}
+                        onDurationBlur={onDurationSave}
+                      />
+                    )
+                  }
+                  
+                  // Single item - use SortableRow
+                  return (
+                    <SortableRow
+                      key={primaryItem.id}
+                      item={primaryItem}
+                      isSelected={selectedItemId === primaryItem.id}
+                      isSelectedForDelete={selectedForDeleteIds.has(primaryItem.id)}
+                      selectedSegmentId={selectedSegmentId}
+                      editingSlugRowId={editingSlugRowId}
+                      tempSlugValue={tempSlugValue}
+                      editingSegmentId={editingSegmentId}
+                      tempSegmentValue={tempSegmentValue}
+                      addingSegmentForRowId={addingSegmentForRowId}
+                      editingDurationRowId={editingDurationRowId}
+                      tempDurationValue={tempDurationValue}
+                      editingProducerRowId={editingProducerRowId}
+                      tempProducerValue={tempProducerValue}
+                      editingActualRowId={editingActualRowId}
+                      tempActualValue={tempActualValue}
+                      editingFrontRowId={editingFrontRowId}
+                      tempFrontValue={tempFrontValue}
+                      slugInputRef={slugInputRef}
+                      segmentInputRef={segmentInputRef}
+                      durationInputRef={durationInputRef}
+                      producerInputRef={producerInputRef}
+                      actualInputRef={actualInputRef}
+                      frontInputRef={frontInputRef}
+                      onRowClick={onRowClick}
+                      onPgClick={onPgClick}
+                      onSlugDoubleClick={onSlugDoubleClick}
+                      onSlugChange={onSlugChange}
+                      onSlugKeyDown={(e) => {
+                        if (e.key === "Enter") {
+                          e.preventDefault()
+                          onSlugSave()
+                        } else if (e.key === "Escape") {
+                          onSlugCancel()
+                        }
+                      }}
+                      onSlugBlur={onSlugSave}
+                      onSegmentClick={onSegmentClick}
+                      onSegmentDoubleClick={onSegmentDoubleClick}
+                      onSegmentChange={onSegmentChange}
+                      onSegmentKeyDown={(e, isNew, rowId) => {
+                        if (e.key === "Enter") {
+                          e.preventDefault()
+                          if (isNew) {
+                            onSegmentSaveNew(rowId)
+                          } else {
+                            onSegmentSave()
+                          }
+                        } else if (e.key === "Escape") {
+                          onSegmentCancel()
+                        }
+                      }}
+                      onSegmentBlur={(isNew, rowId) => {
                         if (isNew) {
                           onSegmentSaveNew(rowId)
                         } else {
                           onSegmentSave()
                         }
-                      } else if (e.key === "Escape") {
-                        onSegmentCancel()
-                      }
-                    }}
-                    onSegmentBlur={(isNew, rowId) => {
-                      if (isNew) {
-                        onSegmentSaveNew(rowId)
-                      } else {
-                        onSegmentSave()
-                      }
-                    }}
-                    onSegmentDelete={onSegmentDelete}
-                    onAddSegment={onAddSegment}
-                    onFinalApprDoubleClick={onFinalApprDoubleClick}
-                    onFloatDoubleClick={onFloatDoubleClick}
-                    onDurationDoubleClick={onDurationDoubleClick}
-                    onDurationChange={onDurationChange}
-                    onDurationKeyDown={(e) => {
-                      if (e.key === "Enter") {
-                        e.preventDefault()
-                        onDurationSave()
-                      } else if (e.key === "Escape") {
-                        onDurationCancel()
-                      }
-                    }}
-                    onDurationBlur={onDurationSave}
-                  />
-                ))}
+                      }}
+                      onSegmentDelete={onSegmentDelete}
+                      onAddSegment={onAddSegment}
+                      onFinalApprDoubleClick={onFinalApprDoubleClick}
+                      onFloatDoubleClick={onFloatDoubleClick}
+                      onDurationDoubleClick={onDurationDoubleClick}
+                      onDurationChange={onDurationChange}
+                      onDurationKeyDown={(e) => {
+                        if (e.key === "Enter") {
+                          e.preventDefault()
+                          onDurationSave()
+                        } else if (e.key === "Escape") {
+                          onDurationCancel()
+                        }
+                      }}
+                      onDurationBlur={onDurationSave}
+                      onProducerDoubleClick={onProducerDoubleClick}
+                      onProducerChange={onProducerChange}
+                      onProducerKeyDown={(e) => {
+                        if (e.key === "Enter") {
+                          e.preventDefault()
+                          onProducerSave()
+                        } else if (e.key === "Escape") {
+                          onProducerCancel()
+                        }
+                      }}
+                      onProducerBlur={onProducerSave}
+                      onActualDoubleClick={onActualDoubleClick}
+                      onActualChange={onActualChange}
+                      onActualKeyDown={(e) => {
+                        if (e.key === "Enter") {
+                          e.preventDefault()
+                          onActualSave()
+                        } else if (e.key === "Escape") {
+                          onActualCancel()
+                        }
+                      }}
+                      onActualBlur={onActualSave}
+                      onFrontDoubleClick={onFrontDoubleClick}
+                      onFrontChange={onFrontChange}
+                      onFrontKeyDown={(e) => {
+                        if (e.key === "Enter") {
+                          e.preventDefault()
+                          onFrontSave()
+                        } else if (e.key === "Escape") {
+                          onFrontCancel()
+                        }
+                      }}
+                      onFrontBlur={onFrontSave}
+                    />
+                  )
+                })}
               </SortableContext>
             )}
           </tbody>

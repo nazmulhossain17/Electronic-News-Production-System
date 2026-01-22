@@ -237,8 +237,6 @@ export const categories = pgTable(
   {
     id: uuid("id").primaryKey().defaultRandom(),
     name: varchar("name", { length: 100 }).notNull(),
-    code: varchar("code", { length: 20 }).notNull(),
-    description: text("description"),
     color: varchar("color", { length: 7 }).default("#3498db"),
     deskId: uuid("desk_id").references(() => desks.id),
     isActive: boolean("is_active").default(true).notNull(),
@@ -249,7 +247,7 @@ export const categories = pgTable(
       .notNull(),
   },
   (table) => [
-    index("categories_code_idx").on(table.code),
+    index("categories_name_idx").on(table.name),  // Changed from code to name
     index("categories_desk_id_idx").on(table.deskId),
   ]
 )
@@ -391,7 +389,7 @@ export const rowSegments = pgTable(
     // Segment Info
     name: varchar("name", { length: 50 }).notNull(),
     type: segmentTypeEnum("type").default("LIVE"),
-    description: text("description").default(""),
+    description: text("description").default(""), // Already text type - supports HTML
 
     // Timing
     estDurationSecs: integer("est_duration_secs").default(0),
@@ -413,7 +411,6 @@ export const rowSegments = pgTable(
     index("row_segments_sort_order_idx").on(table.sortOrder),
   ]
 )
-
 /* ═══════════════════════════════════════════════════════════════════════════════
    STORY POOLS
    ═══════════════════════════════════════════════════════════════════════════════ */

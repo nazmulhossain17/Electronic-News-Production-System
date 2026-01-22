@@ -1,16 +1,14 @@
 import { NextRequest } from "next/server"
-import { db } from "@/lib/db"
-import { user, appUsers, newsDesks } from "@/lib/schema"
 import { eq, asc, sql, and, like, or } from "drizzle-orm"
 import { requireRole } from "@/lib/auth"
 import {
   successResponse,
-  notFoundResponse,
-  errorResponse,
   serverErrorResponse,
   validationErrorResponse,
 } from "@/lib/api-response"
 import { z } from "zod"
+import { appUsers, user } from "@/db/schema"
+import db from "@/db"
 
 // Validation schemas
 const updateUserRoleSchema = z.object({

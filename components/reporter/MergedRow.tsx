@@ -1,6 +1,6 @@
 // ============================================================================
-// File: components/reporter/SortableRow.tsx
-// Description: Individual sortable row component with editable fields
+// File: components/reporter/MergedRow.tsx
+// Description: Merged row component for displaying multiple rows with same slug
 // ============================================================================
 
 "use client"
@@ -11,8 +11,8 @@ import { GripVertical, Check, CheckCircle } from "lucide-react"
 import { Segment } from "@/lib/api-client"
 import { RundownDisplayItem } from "@/types/reporter"
 
-interface SortableRowProps {
-  item: RundownDisplayItem
+interface MergedRowProps {
+  items: RundownDisplayItem[]
   isSelected: boolean
   isSelectedForDelete: boolean
   selectedSegmentId: string | null
@@ -23,19 +23,9 @@ interface SortableRowProps {
   addingSegmentForRowId: string | null
   editingDurationRowId: string | null
   tempDurationValue: string
-  // New editing states
-  editingProducerRowId: string | null
-  tempProducerValue: string
-  editingActualRowId: string | null
-  tempActualValue: string
-  editingFrontRowId: string | null
-  tempFrontValue: string
   slugInputRef: React.RefObject<HTMLInputElement | null>
   segmentInputRef: React.RefObject<HTMLInputElement | null>
   durationInputRef: React.RefObject<HTMLInputElement | null>
-  producerInputRef: React.RefObject<HTMLInputElement | null>
-  actualInputRef: React.RefObject<HTMLInputElement | null>
-  frontInputRef: React.RefObject<HTMLInputElement | null>
   onRowClick: (item: RundownDisplayItem) => void
   onPgClick: (item: RundownDisplayItem, e: React.MouseEvent) => void
   onSlugDoubleClick: (rowId: string, slug: string) => void
@@ -55,19 +45,6 @@ interface SortableRowProps {
   onDurationChange: (value: string) => void
   onDurationKeyDown: (e: React.KeyboardEvent) => void
   onDurationBlur: () => void
-  // New handlers
-  onProducerDoubleClick: (rowId: string, currentValue: string) => void
-  onProducerChange: (value: string) => void
-  onProducerKeyDown: (e: React.KeyboardEvent) => void
-  onProducerBlur: () => void
-  onActualDoubleClick: (rowId: string, currentValue: string) => void
-  onActualChange: (value: string) => void
-  onActualKeyDown: (e: React.KeyboardEvent) => void
-  onActualBlur: () => void
-  onFrontDoubleClick: (rowId: string, currentValue: string) => void
-  onFrontChange: (value: string) => void
-  onFrontKeyDown: (e: React.KeyboardEvent) => void
-  onFrontBlur: () => void
 }
 
 // Segment color mapping
@@ -89,8 +66,8 @@ const segmentColors: Record<string, { bg: string; border: string }> = {
 // Common border style
 const cellBorder = "1px solid rgba(100, 116, 139, 0.3)"
 
-export default function SortableRow({
-  item,
+export default function MergedRow({
+  items,
   isSelected,
   isSelectedForDelete,
   selectedSegmentId,
@@ -101,18 +78,9 @@ export default function SortableRow({
   addingSegmentForRowId,
   editingDurationRowId,
   tempDurationValue,
-  editingProducerRowId,
-  tempProducerValue,
-  editingActualRowId,
-  tempActualValue,
-  editingFrontRowId,
-  tempFrontValue,
   slugInputRef,
   segmentInputRef,
   durationInputRef,
-  producerInputRef,
-  actualInputRef,
-  frontInputRef,
   onRowClick,
   onPgClick,
   onSlugDoubleClick,
@@ -132,19 +100,10 @@ export default function SortableRow({
   onDurationChange,
   onDurationKeyDown,
   onDurationBlur,
-  onProducerDoubleClick,
-  onProducerChange,
-  onProducerKeyDown,
-  onProducerBlur,
-  onActualDoubleClick,
-  onActualChange,
-  onActualKeyDown,
-  onActualBlur,
-  onFrontDoubleClick,
-  onFrontChange,
-  onFrontKeyDown,
-  onFrontBlur,
-}: SortableRowProps) {
+}: MergedRowProps) {
+  // Use the first item for sortable and main row data
+  const primaryItem = items[0]
+  
   const {
     attributes,
     listeners,
@@ -152,10 +111,28 @@ export default function SortableRow({
     transform,
     transition,
     isDragging,
-  } = useSortable({ id: item.id })
+  } = useSortable({ id: primaryItem.id })
 
-  const isApproved = item.finalAppr === "✓"
-  const isFloated = item.float === "F" || item.float === "✓"
+  // Check if any item in the group is floated or approved
+  const isAnyFloated = items.some(item => item.float === "F" || item.float === "✓")
+  const isAnyApproved = items.some(item => item.finalAppr === "✓")
+
+  // Combine all segments from all items
+  const allSegments = items.flatMap((item, itemIndex) => 
+    item.segments.map(seg => ({ ...seg, itemId: item.id, itemIndex }))
+  )
+
+  // Calculate totals
+  const totalEstDuration = items.reduce((sum, item) => {
+    const [mins, secs] = (item.estDuration || "0:00").split(":").map(Number)
+    return sum + (mins * 60 + (secs || 0))
+  }, 0)
+  const totalMins = Math.floor(totalEstDuration / 60)
+  const totalSecs = totalEstDuration % 60
+  const totalDurationDisplay = `${totalMins}:${totalSecs.toString().padStart(2, "0")}`
+
+  // Get merged page codes
+  const pageCodes = items.map(item => item.page).join(", ")
 
   // ─── Styles ─────────────────────────────────────────────────────
 
@@ -165,15 +142,15 @@ export default function SortableRow({
     opacity: isDragging ? 0.5 : 1,
     backgroundColor: isDragging
       ? "rgba(52, 152, 219, 0.1)"
-      : isFloated
-      ? "rgba(139, 0, 0, 0.25)"  // Dark red background for floated rows
+      : isAnyFloated
+      ? "rgba(139, 0, 0, 0.25)"
       : isSelectedForDelete
       ? "rgba(231, 76, 60, 0.15)"
       : isSelected
       ? "rgba(52, 152, 219, 0.15)"
       : "transparent",
-    borderLeft: isFloated
-      ? "3px solid #8b0000"  // Dark red border for floated
+    borderLeft: isAnyFloated
+      ? "3px solid #8b0000"
       : isSelectedForDelete
       ? "3px solid #e74c3c"
       : isSelected
@@ -207,12 +184,20 @@ export default function SortableRow({
       userSelect: "none" as const,
       borderBottom: cellBorder,
       borderRight: cellBorder,
+      verticalAlign: "top" as const,
     },
     pgCheckbox: {
       display: "flex",
+      flexDirection: "column" as const,
       alignItems: "center",
-      justifyContent: "center",
-      gap: "4px",
+      gap: "2px",
+    },
+    pgItem: {
+      padding: "2px 0",
+      borderBottom: "1px solid rgba(100, 116, 139, 0.2)",
+    },
+    pgItemLast: {
+      padding: "2px 0",
     },
     checkIcon: {
       width: "14px",
@@ -224,10 +209,12 @@ export default function SortableRow({
       padding: "8px",
       borderBottom: cellBorder,
       borderRight: cellBorder,
+      verticalAlign: "middle" as const,
     },
     slugText: {
       display: "block",
       padding: "2px 4px",
+      fontWeight: 600,
     },
     slugInput: {
       width: "100%",
@@ -267,11 +254,6 @@ export default function SortableRow({
       height: "1px",
       backgroundColor: "rgba(100, 116, 139, 0.4)",
       margin: "2px 0",
-    },
-    segmentItem: {
-      display: "flex",
-      alignItems: "center",
-      gap: "2px",
     },
     segmentTag: (name: string, isActive: boolean): React.CSSProperties => {
       const colors = segmentColors[name.toUpperCase()] || { bg: "#7f8c8d", border: "#95a5a6" }
@@ -410,30 +392,10 @@ export default function SortableRow({
       outline: "none",
       textAlign: "center" as const,
     },
-    editableCell: {
-      padding: "8px",
-      fontSize: "12px",
-      borderBottom: cellBorder,
-      borderRight: cellBorder,
-      verticalAlign: "middle" as const,
-      cursor: "pointer",
-      transition: "background 0.2s",
-    },
-    cellText: {
-      display: "block",
-      padding: "2px 4px",
-    },
-    textInput: {
-      width: "100%",
-      minWidth: "80px",
-      padding: "4px 6px",
-      fontSize: "12px",
-      fontWeight: 500,
-      background: "#1a1a2e",
-      border: "1px solid #3498db",
-      borderRadius: "3px",
-      color: "#ecf0f1",
-      outline: "none",
+    mergedIndicator: {
+      fontSize: "10px",
+      color: "#7f8c8d",
+      fontStyle: "italic" as const,
     },
   }
 
@@ -441,7 +403,7 @@ export default function SortableRow({
     <tr
       ref={setNodeRef}
       style={getRowStyle()}
-      onClick={() => onRowClick(item)}
+      onClick={() => onRowClick(primaryItem)}
     >
       {/* Drag Handle */}
       <td
@@ -460,12 +422,12 @@ export default function SortableRow({
         <GripVertical size={16} />
       </td>
 
-      {/* PG Cell - Click to toggle selection */}
+      {/* PG Cell - Show all page codes stacked */}
       <td
         style={styles.pg}
         onClick={(e) => {
           e.stopPropagation()
-          onPgClick(item, e)
+          onPgClick(primaryItem, e)
         }}
         onMouseEnter={(e) => {
           if (!isSelectedForDelete) {
@@ -477,24 +439,31 @@ export default function SortableRow({
             e.currentTarget.style.background = "transparent"
           }
         }}
-        title="Click to select (Ctrl+Click for multi-select, Shift+Click for range)"
+        title="Click to select"
       >
         <div style={styles.pgCheckbox}>
           {isSelectedForDelete && <Check size={14} style={styles.checkIcon} />}
-          <span>{item.page}</span>
+          {items.map((item, idx) => (
+            <div 
+              key={item.id} 
+              style={idx < items.length - 1 ? styles.pgItem : styles.pgItemLast}
+            >
+              {item.page}
+            </div>
+          ))}
         </div>
       </td>
 
-      {/* Editable Slug Cell */}
+      {/* Editable Slug Cell - Shows single slug for merged rows */}
       <td
         style={styles.slug}
         onDoubleClick={(e) => {
           e.stopPropagation()
-          onSlugDoubleClick(item.id, item.slug)
+          onSlugDoubleClick(primaryItem.id, primaryItem.slug)
         }}
         title="Double-click to edit"
       >
-        {editingSlugRowId === item.id ? (
+        {editingSlugRowId === primaryItem.id ? (
           <input
             ref={slugInputRef}
             type="text"
@@ -507,145 +476,125 @@ export default function SortableRow({
             autoFocus
           />
         ) : (
-          <span style={styles.slugText}>{item.slug || "(empty)"}</span>
+          <>
+            <span style={styles.slugText}>{primaryItem.slug || "(empty)"}</span>
+            {items.length > 1 && (
+              <span style={styles.mergedIndicator}>({items.length} rows merged)</span>
+            )}
+          </>
         )}
       </td>
 
-      {/* Multiple Segments - Stacked Vertically */}
+      {/* Segments - Stacked vertically from all merged rows */}
       <td style={styles.segmentCell}>
         <div style={styles.segmentsContainer}>
-          {item.segments.map((seg, index) => (
-            <div key={seg.id} style={styles.segmentRow}>
-              {editingSegmentId === seg.id ? (
-                <input
-                  ref={segmentInputRef}
-                  type="text"
-                  value={tempSegmentValue}
-                  onChange={(e) => onSegmentChange(e.target.value.toUpperCase())}
-                  onKeyDown={(e) => onSegmentKeyDown(e, false, item.id)}
-                  onBlur={() => onSegmentBlur(false, item.id)}
-                  style={styles.segmentInput}
-                  maxLength={12}
-                  autoFocus
-                />
-              ) : (
-                <div style={styles.segmentRowContent}>
-                  <span
-                    style={styles.segmentTag(seg.name, selectedSegmentId === seg.id)}
-                    onClick={(e) => {
-                      e.stopPropagation()
-                      onSegmentClick(item.id, seg)
-                    }}
-                    onDoubleClick={(e) => {
-                      e.stopPropagation()
-                      onSegmentDoubleClick(seg)
-                    }}
-                    title={seg.description || "Double-click to edit name"}
-                  >
-                    {seg.name}
-                    {seg.description && <span style={styles.segmentHasDesc}>•</span>}
-                  </span>
-                  {item.segments.length > 1 && !seg.id.startsWith("temp-") && (
-                    <button
-                      style={styles.segmentDeleteBtn}
-                      onClick={(e) => {
-                        e.stopPropagation()
-                        onSegmentDelete(seg)
-                      }}
-                      onMouseEnter={(e) => (e.currentTarget.style.opacity = "1")}
-                      onMouseLeave={(e) => (e.currentTarget.style.opacity = "0.7")}
-                      title="Delete segment"
-                    >
-                      ×
-                    </button>
+          {items.map((item, itemIndex) => (
+            <div key={item.id}>
+              {item.segments.map((seg, segIndex) => (
+                <div key={seg.id} style={styles.segmentRow}>
+                  {editingSegmentId === seg.id ? (
+                    <input
+                      ref={segmentInputRef}
+                      type="text"
+                      value={tempSegmentValue}
+                      onChange={(e) => onSegmentChange(e.target.value.toUpperCase())}
+                      onKeyDown={(e) => onSegmentKeyDown(e, false, item.id)}
+                      onBlur={() => onSegmentBlur(false, item.id)}
+                      style={styles.segmentInput}
+                      maxLength={12}
+                      autoFocus
+                    />
+                  ) : (
+                    <div style={styles.segmentRowContent}>
+                      <span
+                        style={styles.segmentTag(seg.name, selectedSegmentId === seg.id)}
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          onSegmentClick(item.id, seg)
+                        }}
+                        onDoubleClick={(e) => {
+                          e.stopPropagation()
+                          onSegmentDoubleClick(seg)
+                        }}
+                        title={seg.description || "Double-click to edit name"}
+                      >
+                        {seg.name}
+                        {seg.description && <span style={styles.segmentHasDesc}>•</span>}
+                      </span>
+                      {/* Allow delete if: total segments in merged group > 1, or this item has > 1 segment */}
+                      {(allSegments.length > 1 || item.segments.length > 1) && !seg.id.startsWith("temp-") && (
+                        <button
+                          style={styles.segmentDeleteBtn}
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            onSegmentDelete(seg)
+                          }}
+                          onMouseEnter={(e) => (e.currentTarget.style.opacity = "1")}
+                          onMouseLeave={(e) => (e.currentTarget.style.opacity = "0.7")}
+                          title="Delete segment"
+                        >
+                          ×
+                        </button>
+                      )}
+                    </div>
+                  )}
+                  {/* Separator between segments */}
+                  {(segIndex < item.segments.length - 1 || itemIndex < items.length - 1) && (
+                    <div style={styles.segmentSeparator} />
                   )}
                 </div>
-              )}
-              {/* Separator line between segments */}
-              {index < item.segments.length - 1 && (
-                <div style={styles.segmentSeparator} />
-              )}
+              ))}
+              
+              {/* Add segment button for each row */}
+              {addingSegmentForRowId === item.id ? (
+                <div style={styles.segmentRow}>
+                  <input
+                    ref={segmentInputRef}
+                    type="text"
+                    value={tempSegmentValue}
+                    onChange={(e) => onSegmentChange(e.target.value.toUpperCase())}
+                    onKeyDown={(e) => onSegmentKeyDown(e, true, item.id)}
+                    onBlur={() => onSegmentBlur(true, item.id)}
+                    style={styles.segmentInput}
+                    maxLength={12}
+                    placeholder="TYPE..."
+                    autoFocus
+                  />
+                </div>
+              ) : null}
             </div>
           ))}
-
-          {/* Add New Segment Button */}
-          {addingSegmentForRowId === item.id ? (
-            <div style={styles.segmentRow}>
-              <input
-                ref={segmentInputRef}
-                type="text"
-                value={tempSegmentValue}
-                onChange={(e) => onSegmentChange(e.target.value.toUpperCase())}
-                onKeyDown={(e) => onSegmentKeyDown(e, true, item.id)}
-                onBlur={() => onSegmentBlur(true, item.id)}
-                style={styles.segmentInput}
-                maxLength={12}
-                placeholder="TYPE..."
-                autoFocus
-              />
-            </div>
-          ) : (
-            <button
-              style={styles.segmentAddBtn}
-              onClick={(e) => {
-                e.stopPropagation()
-                onAddSegment(item.id)
-              }}
-              onMouseEnter={(e) => {
-                e.currentTarget.style.borderColor = "#3498db"
-                e.currentTarget.style.color = "#3498db"
-              }}
-              onMouseLeave={(e) => {
-                e.currentTarget.style.borderColor = "#7f8c8d"
-                e.currentTarget.style.color = "#7f8c8d"
-              }}
-              title="Add segment"
-            >
-              +
-            </button>
-          )}
+          
+          {/* Single add button at the bottom */}
+          <button
+            style={styles.segmentAddBtn}
+            onClick={(e) => {
+              e.stopPropagation()
+              onAddSegment(primaryItem.id)
+            }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.borderColor = "#3498db"
+              e.currentTarget.style.color = "#3498db"
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.borderColor = "#7f8c8d"
+              e.currentTarget.style.color = "#7f8c8d"
+            }}
+            title="Add segment"
+          >
+            +
+          </button>
         </div>
       </td>
 
-      {/* Editable Story Producer Cell */}
-      <td
-        style={styles.editableCell}
-        onDoubleClick={(e) => {
-          e.stopPropagation()
-          onProducerDoubleClick(item.id, item.storyProduc || "")
-        }}
-        onMouseEnter={(e) => {
-          e.currentTarget.style.background = "rgba(52, 152, 219, 0.1)"
-        }}
-        onMouseLeave={(e) => {
-          e.currentTarget.style.background = "transparent"
-        }}
-        title="Double-click to edit producer"
-      >
-        {editingProducerRowId === item.id ? (
-          <input
-            ref={producerInputRef}
-            type="text"
-            value={tempProducerValue}
-            onChange={(e) => onProducerChange(e.target.value)}
-            onKeyDown={onProducerKeyDown}
-            onBlur={onProducerBlur}
-            style={styles.textInput}
-            onClick={(e) => e.stopPropagation()}
-            placeholder="Producer name"
-            autoFocus
-          />
-        ) : (
-          <span style={styles.cellText}>{item.storyProduc || ""}</span>
-        )}
-      </td>
+      <td style={styles.td}>{primaryItem.storyProduc}</td>
       
-      {/* Final Approval - Double click to toggle */}
+      {/* Final Approval */}
       <td
         style={styles.finalAppr}
         onDoubleClick={(e) => {
           e.stopPropagation()
-          onFinalApprDoubleClick(item)
+          onFinalApprDoubleClick(primaryItem)
         }}
         onMouseEnter={(e) => {
           e.currentTarget.style.background = "rgba(39, 174, 96, 0.2)"
@@ -655,48 +604,48 @@ export default function SortableRow({
         }}
         title="Double-click to toggle approval"
       >
-        {isApproved ? (
+        {isAnyApproved ? (
           <div style={styles.approvedIcon}>
             <CheckCircle size={18} color="#27ae60" />
           </div>
         ) : null}
       </td>
 
-      {/* Float - Double click to toggle (stops the row from airing) */}
+      {/* Float */}
       <td
         style={{
           ...styles.floatCell,
-          backgroundColor: isFloated ? "rgba(139, 0, 0, 0.4)" : "transparent",
+          backgroundColor: isAnyFloated ? "rgba(139, 0, 0, 0.4)" : "transparent",
         }}
         onDoubleClick={(e) => {
           e.stopPropagation()
-          onFloatDoubleClick(item)
+          onFloatDoubleClick(primaryItem)
         }}
         onMouseEnter={(e) => {
-          if (!isFloated) {
+          if (!isAnyFloated) {
             e.currentTarget.style.background = "rgba(139, 0, 0, 0.2)"
           }
         }}
         onMouseLeave={(e) => {
-          if (!isFloated) {
+          if (!isAnyFloated) {
             e.currentTarget.style.background = "transparent"
           }
         }}
-        title="Double-click to float/unfloat (floated stories won't air)"
+        title="Double-click to float/unfloat"
       >
-        {isFloated ? (
+        {isAnyFloated ? (
           <div style={styles.floatIcon}>
             <Check size={16} color="#fff" strokeWidth={3} />
           </div>
         ) : null}
       </td>
-      
-      {/* Editable EST Duration Cell */}
+
+      {/* EST Duration - Show total for merged rows */}
       <td
         style={styles.durationCell}
         onDoubleClick={(e) => {
           e.stopPropagation()
-          onDurationDoubleClick(item.id, item.estDuration)
+          onDurationDoubleClick(primaryItem.id, primaryItem.estDuration)
         }}
         onMouseEnter={(e) => {
           e.currentTarget.style.background = "rgba(52, 152, 219, 0.1)"
@@ -704,9 +653,9 @@ export default function SortableRow({
         onMouseLeave={(e) => {
           e.currentTarget.style.background = "transparent"
         }}
-        title="Double-click to edit (format: M:SS)"
+        title="Double-click to edit"
       >
-        {editingDurationRowId === item.id ? (
+        {editingDurationRowId === primaryItem.id ? (
           <input
             ref={durationInputRef}
             type="text"
@@ -720,78 +669,16 @@ export default function SortableRow({
             autoFocus
           />
         ) : (
-          <span style={styles.durationText}>{item.estDuration}</span>
+          <span style={styles.durationText}>
+            {items.length > 1 ? totalDurationDisplay : primaryItem.estDuration}
+          </span>
         )}
       </td>
 
-      {/* Editable Actual Duration Cell */}
-      <td
-        style={styles.durationCell}
-        onDoubleClick={(e) => {
-          e.stopPropagation()
-          onActualDoubleClick(item.id, item.actual || "")
-        }}
-        onMouseEnter={(e) => {
-          e.currentTarget.style.background = "rgba(52, 152, 219, 0.1)"
-        }}
-        onMouseLeave={(e) => {
-          e.currentTarget.style.background = "transparent"
-        }}
-        title="Double-click to edit actual duration (format: M:SS)"
-      >
-        {editingActualRowId === item.id ? (
-          <input
-            ref={actualInputRef}
-            type="text"
-            value={tempActualValue}
-            onChange={(e) => onActualChange(e.target.value)}
-            onKeyDown={onActualKeyDown}
-            onBlur={onActualBlur}
-            style={styles.durationInput}
-            onClick={(e) => e.stopPropagation()}
-            placeholder="M:SS"
-            autoFocus
-          />
-        ) : (
-          <span style={styles.durationText}>{item.actual || ""}</span>
-        )}
-      </td>
-
-      {/* Editable Front Time Cell */}
-      <td
-        style={styles.durationCell}
-        onDoubleClick={(e) => {
-          e.stopPropagation()
-          onFrontDoubleClick(item.id, item.front || "")
-        }}
-        onMouseEnter={(e) => {
-          e.currentTarget.style.background = "rgba(52, 152, 219, 0.1)"
-        }}
-        onMouseLeave={(e) => {
-          e.currentTarget.style.background = "transparent"
-        }}
-        title="Double-click to edit front time"
-      >
-        {editingFrontRowId === item.id ? (
-          <input
-            ref={frontInputRef}
-            type="text"
-            value={tempFrontValue}
-            onChange={(e) => onFrontChange(e.target.value)}
-            onKeyDown={onFrontKeyDown}
-            onBlur={onFrontBlur}
-            style={styles.durationInput}
-            onClick={(e) => e.stopPropagation()}
-            placeholder="H:MM:SS"
-            autoFocus
-          />
-        ) : (
-          <span style={styles.durationText}>{item.front || ""}</span>
-        )}
-      </td>
-
-      <td style={styles.td}>{item.cume}</td>
-      <td style={styles.tdLast}>{item.lastModBy}</td>
+      <td style={styles.td}>{primaryItem.actual}</td>
+      <td style={styles.td}>{primaryItem.front}</td>
+      <td style={styles.td}>{primaryItem.cume}</td>
+      <td style={styles.tdLast}>{primaryItem.lastModBy}</td>
     </tr>
   )
 }

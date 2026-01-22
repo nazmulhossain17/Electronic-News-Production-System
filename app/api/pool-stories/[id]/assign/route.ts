@@ -1,6 +1,5 @@
 import { NextRequest } from "next/server"
-import { db } from "@/lib/db"
-import { poolStories, bulletins, rundownRows } from "@/lib/schema"
+import { db } from "@/db"
 import { eq, asc } from "drizzle-orm"
 import { requireRole } from "@/lib/auth"
 import {
@@ -19,6 +18,7 @@ import {
   shiftSortOrders,
   logActivity,
 } from "@/lib/rundown-service"
+import { bulletins, poolStories, rundownRows } from "@/db/schema"
 
 interface RouteParams {
   params: Promise<{ id: string }>

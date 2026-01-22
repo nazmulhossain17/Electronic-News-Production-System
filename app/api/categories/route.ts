@@ -18,10 +18,8 @@ import { categories, desks } from "@/db/schema"
 
 const createCategorySchema = z.object({
   name: z.string().min(1).max(100),
-  code: z.string().min(1).max(20),
-  description: z.string().optional(),
   deskId: z.string().uuid().optional(),
-  color: z.string().regex(/^#[0-9A-Fa-f]{6}$/).default("#6B7280"),
+  color: z.string().regex(/^#[0-9A-Fa-f]{6}$/).default("#3498db"),
 })
 
 /**
@@ -40,8 +38,6 @@ export async function GET(request: NextRequest) {
       .select({
         id: categories.id,
         name: categories.name,
-        code: categories.code,
-        description: categories.description,
         deskId: categories.deskId,
         deskName: desks.name,
         color: categories.color,
@@ -71,7 +67,7 @@ export async function GET(request: NextRequest) {
  */
 export async function POST(request: NextRequest) {
   try {
-    const authResult = await requireRole(request, ["ADMIN", "PRODUCER"])
+    const authResult = await requireRole(request, ["ADMIN", "EDITOR"])
     if ("error" in authResult) return authResult.error
 
     const body = await request.json()
@@ -87,8 +83,6 @@ export async function POST(request: NextRequest) {
       .insert(categories)
       .values({
         name: data.name,
-        code: data.code.toUpperCase(),
-        description: data.description,
         deskId: data.deskId,
         color: data.color,
       })

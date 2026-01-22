@@ -1,13 +1,16 @@
 // ============================================================================
 // File: components/reporter/DescriptionPanel.tsx
 // Description: Right panel showing segment details, history, and description
+//              with collapsible history and expandable panel
 // ============================================================================
 
 "use client"
 
-import { X, Trash2, Save, User, Clock, Edit3 } from "lucide-react"
+import { useState } from "react"
+import { X, Trash2, Save, User, Clock, Edit3, ChevronDown, ChevronUp, Maximize2, Minimize2, Download } from "lucide-react"
 import { Segment } from "@/lib/api-client"
 import { RundownDisplayItem } from "@/types/reporter"
+import RichTextEditor from "./RichTextEditor"
 
 interface Category {
   id: string
@@ -28,7 +31,7 @@ interface DescriptionPanelProps {
   onClose: () => void
   onSegmentSelect: (segmentId: string) => void
   onCategoryChange: (categoryId: string) => void
-  onDescriptionChange: (e: React.ChangeEvent<HTMLTextAreaElement>) => void
+  onDescriptionChange: (html: string) => void
   onManualSave: () => void
   onDeleteSegment: (segment: Segment) => void
 }
@@ -51,9 +54,138 @@ export default function DescriptionPanel({
   onDeleteSegment,
 }: DescriptionPanelProps) {
   const isPlaceholder = selectedSegmentId?.startsWith("temp-")
+  const [showHistory, setShowHistory] = useState(false)
+  const [isExpanded, setIsExpanded] = useState(false)
+
+  const panelWidth = isExpanded ? "70vw" : "320px"
+
+  // Function to download PDF with Unicode/Bangla support
+  const handleDownloadPDF = async () => {
+    try {
+      // Strip HTML tags for plain text, but preserve line breaks
+      const plainDescription = editDescription
+        .replace(/<br\s*\/?>/gi, "\n")
+        .replace(/<\/p>/gi, "\n\n")
+        .replace(/<\/li>/gi, "\n")
+        .replace(/<li>/gi, "• ")
+        .replace(/<[^>]+>/g, "")
+        .trim()
+
+      // Create HTML content for printing to PDF
+      const htmlContent = `
+        <!DOCTYPE html>
+        <html>
+        <head>
+          <meta charset="UTF-8">
+          <style>
+            @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+Bengali:wght@400;600;700&display=swap');
+            
+            * {
+              margin: 0;
+              padding: 0;
+              box-sizing: border-box;
+            }
+            
+            body {
+              font-family: 'Noto Sans Bengali', 'Segoe UI', Arial, sans-serif;
+              padding: 40px;
+              color: #2c3e50;
+              line-height: 1.6;
+            }
+            
+            .header {
+              border-bottom: 3px solid #3498db;
+              padding-bottom: 20px;
+              margin-bottom: 25px;
+            }
+            
+            .title {
+              font-size: 28px;
+              font-weight: 700;
+              color: #2c3e50;
+              margin-bottom: 10px;
+            }
+            
+            .metadata {
+              font-size: 12px;
+              color: #666;
+            }
+            
+            .metadata span {
+              margin-right: 20px;
+            }
+            
+            .section-title {
+              font-size: 14px;
+              font-weight: 600;
+              color: #3498db;
+              text-transform: uppercase;
+              margin-bottom: 15px;
+              letter-spacing: 1px;
+            }
+            
+            .description {
+              font-size: 14px;
+              line-height: 1.8;
+              white-space: pre-wrap;
+              color: #2c3e50;
+            }
+            
+            .footer {
+              margin-top: 40px;
+              padding-top: 20px;
+              border-top: 1px solid #eee;
+              font-size: 10px;
+              color: #999;
+            }
+          </style>
+        </head>
+        <body>
+          <div class="header">
+            <div class="title">${selectedItem.slug || "Untitled"}</div>
+            <div class="metadata">
+              <span><strong>Page:</strong> ${selectedItem.page}</span>
+              <span><strong>Segment:</strong> ${selectedSegment.name}</span>
+              <span><strong>Duration:</strong> ${selectedItem.estDuration}</span>
+            </div>
+          </div>
+          
+          <div class="section-title">Segment Description</div>
+          <div class="description">${plainDescription || "No description available."}</div>
+          
+          <div class="footer">
+            <p>Generated on: ${new Date().toLocaleString()}</p>
+            <p>AP ENPS Newsroom System</p>
+          </div>
+        </body>
+        </html>
+      `
+
+      // Create a new window for printing
+      const printWindow = window.open('', '_blank', 'width=800,height=600')
+      
+      if (!printWindow) {
+        alert("Please allow popups to download PDF")
+        return
+      }
+
+      printWindow.document.write(htmlContent)
+      printWindow.document.close()
+
+      // Wait for fonts to load
+      setTimeout(() => {
+        printWindow.print()
+        printWindow.close()
+      }, 500)
+      
+    } catch (error) {
+      console.error("Error generating PDF:", error)
+      alert("Failed to generate PDF. Please try again.")
+    }
+  }
 
   return (
-    <div style={styles.panel}>
+    <div style={{ ...styles.panel, width: panelWidth }}>
       {/* Header */}
       <div style={styles.header}>
         <div style={styles.headerTitle}>
@@ -61,9 +193,25 @@ export default function DescriptionPanel({
           <span style={styles.slug}>{selectedItem.slug}</span>
           <span style={styles.segmentName}>- {selectedSegment.name}</span>
         </div>
-        <button style={styles.closeBtn} onClick={onClose}>
-          <X size={18} />
-        </button>
+        <div style={styles.headerActions}>
+          <button
+            style={styles.actionBtn}
+            onClick={handleDownloadPDF}
+            title="Download as PDF"
+          >
+            <Download size={16} />
+          </button>
+          <button
+            style={styles.actionBtn}
+            onClick={() => setIsExpanded(!isExpanded)}
+            title={isExpanded ? "Collapse panel" : "Expand panel"}
+          >
+            {isExpanded ? <Minimize2 size={16} /> : <Maximize2 size={16} />}
+          </button>
+          <button style={styles.closeBtn} onClick={onClose}>
+            <X size={18} />
+          </button>
+        </div>
       </div>
 
       {/* Content */}
@@ -104,48 +252,61 @@ export default function DescriptionPanel({
           </select>
         </div>
 
-        {/* Creator & Last Editor Info */}
+        {/* History Section - Collapsible */}
         <div style={styles.section}>
-          <label style={styles.label}>HISTORY</label>
-          <div style={styles.historyContainer}>
-            {/* Created By */}
-            <div style={styles.historyItem}>
-              <User size={14} style={styles.historyIcon} />
-              <div style={styles.historyContent}>
-                <span style={styles.historyLabel}>Created by</span>
-                <span style={styles.historyValue}>
-                  {selectedItem.createdByName || "Unknown"}
-                </span>
+          <button
+            style={styles.historyToggle}
+            onClick={() => setShowHistory(!showHistory)}
+          >
+            <span style={styles.label}>HISTORY</span>
+            {showHistory ? (
+              <ChevronUp size={16} style={styles.toggleIcon} />
+            ) : (
+              <ChevronDown size={16} style={styles.toggleIcon} />
+            )}
+          </button>
+          
+          {showHistory && (
+            <div style={styles.historyContainer}>
+              {/* Created By */}
+              <div style={styles.historyItem}>
+                <User size={14} style={styles.historyIcon} />
+                <div style={styles.historyContent}>
+                  <span style={styles.historyLabel}>Created by</span>
+                  <span style={styles.historyValue}>
+                    {selectedItem.createdByName || "Unknown"}
+                  </span>
+                </div>
               </div>
-            </div>
-            
-            {/* Last Modified By */}
-            <div style={styles.historyItem}>
-              <Edit3 size={14} style={styles.historyIcon} />
-              <div style={styles.historyContent}>
-                <span style={styles.historyLabel}>Last edited by</span>
-                <span style={styles.historyValue}>
-                  {selectedItem.lastModBy || "SYSTEM"}
-                </span>
+              
+              {/* Last Modified By */}
+              <div style={styles.historyItem}>
+                <Edit3 size={14} style={styles.historyIcon} />
+                <div style={styles.historyContent}>
+                  <span style={styles.historyLabel}>Last edited by</span>
+                  <span style={styles.historyValue}>
+                    {selectedItem.lastModBy || "SYSTEM"}
+                  </span>
+                </div>
               </div>
-            </div>
 
-            {/* Timing Info */}
-            <div style={styles.historyItemLast}>
-              <Clock size={14} style={styles.historyIcon} />
-              <div style={styles.historyContent}>
-                <span style={styles.historyLabel}>Duration</span>
-                <span style={styles.historyValue}>
-                  Est: {selectedItem.estDuration}
-                  {selectedItem.actual && ` • Actual: ${selectedItem.actual}`}
-                </span>
+              {/* Timing Info */}
+              <div style={styles.historyItemLast}>
+                <Clock size={14} style={styles.historyIcon} />
+                <div style={styles.historyContent}>
+                  <span style={styles.historyLabel}>Duration</span>
+                  <span style={styles.historyValue}>
+                    Est: {selectedItem.estDuration}
+                    {selectedItem.actual && ` • Actual: ${selectedItem.actual}`}
+                  </span>
+                </div>
               </div>
             </div>
-          </div>
+          )}
         </div>
 
         {/* Segment Description */}
-        <div style={styles.section}>
+        <div style={{ ...styles.section, flex: isExpanded ? 1 : "none" }}>
           <div style={styles.labelRow}>
             <label style={styles.label}>SEGMENT DESCRIPTION</label>
             {isSaving && <span style={styles.savingIndicator}>Saving...</span>}
@@ -153,12 +314,8 @@ export default function DescriptionPanel({
               <span style={styles.savedIndicator}>{saveMessage}</span>
             )}
           </div>
-          <textarea
-            style={{
-              ...styles.textarea,
-              ...(isPlaceholder ? styles.textareaDisabled : {}),
-            }}
-            value={editDescription}
+          <RichTextEditor
+            content={editDescription}
             onChange={onDescriptionChange}
             placeholder={
               isPlaceholder
@@ -166,6 +323,7 @@ export default function DescriptionPanel({
                 : "Enter segment description..."
             }
             disabled={isPlaceholder}
+            minHeight={isExpanded ? "calc(100vh - 400px)" : "120px"}
           />
         </div>
 
@@ -205,14 +363,16 @@ export default function DescriptionPanel({
 
 const styles: Record<string, React.CSSProperties> = {
   panel: {
-    width: "320px",
-    backgroundColor: "#2c3e50",
+    backgroundColor: "#ffffff",
     borderLeftWidth: "1px",
     borderLeftStyle: "solid",
-    borderLeftColor: "#34495e",
+    borderLeftColor: "#e0e0e0",
     display: "flex",
     flexDirection: "column",
     height: "100%",
+    transition: "width 0.3s ease",
+    boxShadow: "-4px 0 20px rgba(0, 0, 0, 0.1)",
+    zIndex: 100,
   },
   header: {
     display: "flex",
@@ -221,8 +381,8 @@ const styles: Record<string, React.CSSProperties> = {
     padding: "12px 16px",
     borderBottomWidth: "1px",
     borderBottomStyle: "solid",
-    borderBottomColor: "#34495e",
-    backgroundColor: "rgba(0, 0, 0, 0.1)",
+    borderBottomColor: "#e0e0e0",
+    backgroundColor: "#f8f9fa",
   },
   headerTitle: {
     display: "flex",
@@ -230,9 +390,14 @@ const styles: Record<string, React.CSSProperties> = {
     gap: "8px",
     fontSize: "14px",
     fontWeight: 600,
-    color: "#ecf0f1",
+    color: "#2c3e50",
     overflow: "hidden",
     flex: 1,
+  },
+  headerActions: {
+    display: "flex",
+    alignItems: "center",
+    gap: "4px",
   },
   pageCode: {
     backgroundColor: "#3498db",
@@ -247,11 +412,29 @@ const styles: Record<string, React.CSSProperties> = {
     overflow: "hidden",
     textOverflow: "ellipsis",
     whiteSpace: "nowrap",
+    color: "#2c3e50",
   },
   segmentName: {
-    color: "#f39c12",
+    color: "#e67e22",
     fontSize: "12px",
     flexShrink: 0,
+    fontWeight: 600,
+  },
+  actionBtn: {
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    width: "28px",
+    height: "28px",
+    backgroundColor: "transparent",
+    borderWidth: "1px",
+    borderStyle: "solid",
+    borderColor: "#d0d0d0",
+    borderRadius: "4px",
+    color: "#666666",
+    cursor: "pointer",
+    flexShrink: 0,
+    transition: "all 0.2s",
   },
   closeBtn: {
     display: "flex",
@@ -262,7 +445,7 @@ const styles: Record<string, React.CSSProperties> = {
     backgroundColor: "transparent",
     borderWidth: 0,
     borderRadius: "4px",
-    color: "#95a5a6",
+    color: "#666666",
     cursor: "pointer",
     flexShrink: 0,
   },
@@ -272,16 +455,16 @@ const styles: Record<string, React.CSSProperties> = {
     overflowY: "auto",
     display: "flex",
     flexDirection: "column",
+    backgroundColor: "#ffffff",
   },
   section: {
-    marginBottom: "20px",
+    marginBottom: "16px",
   },
   label: {
     display: "block",
     fontSize: "11px",
     fontWeight: 600,
-    color: "#7f8c8d",
-    marginBottom: "8px",
+    color: "#666666",
     textTransform: "uppercase",
     letterSpacing: "0.5px",
   },
@@ -293,7 +476,7 @@ const styles: Record<string, React.CSSProperties> = {
   },
   savingIndicator: {
     fontSize: "11px",
-    color: "#f39c12",
+    color: "#e67e22",
   },
   savedIndicator: {
     fontSize: "11px",
@@ -303,15 +486,16 @@ const styles: Record<string, React.CSSProperties> = {
     display: "flex",
     flexWrap: "wrap",
     gap: "8px",
+    marginTop: "8px",
   },
   segmentTab: {
     padding: "6px 12px",
-    backgroundColor: "transparent",
+    backgroundColor: "#f5f5f5",
     borderWidth: "1px",
     borderStyle: "solid",
-    borderColor: "#4a5568",
+    borderColor: "#d0d0d0",
     borderRadius: "4px",
-    color: "#bdc3c7",
+    color: "#555555",
     fontSize: "12px",
     cursor: "pointer",
     transition: "all 0.2s",
@@ -324,19 +508,41 @@ const styles: Record<string, React.CSSProperties> = {
   select: {
     width: "100%",
     padding: "10px 12px",
-    backgroundColor: "#34495e",
+    backgroundColor: "#ffffff",
     borderWidth: "1px",
     borderStyle: "solid",
-    borderColor: "#4a5568",
+    borderColor: "#d0d0d0",
     borderRadius: "4px",
-    color: "#ecf0f1",
+    color: "#2c3e50",
     fontSize: "13px",
     cursor: "pointer",
+    marginTop: "8px",
+  },
+  historyToggle: {
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "space-between",
+    width: "100%",
+    padding: "8px 12px",
+    backgroundColor: "#f5f5f5",
+    borderWidth: "1px",
+    borderStyle: "solid",
+    borderColor: "#d0d0d0",
+    borderRadius: "4px",
+    cursor: "pointer",
+    transition: "all 0.2s",
+  },
+  toggleIcon: {
+    color: "#666666",
   },
   historyContainer: {
-    backgroundColor: "#34495e",
-    borderRadius: "6px",
+    backgroundColor: "#f9f9f9",
+    borderRadius: "0 0 6px 6px",
+    borderWidth: "0 1px 1px 1px",
+    borderStyle: "solid",
+    borderColor: "#d0d0d0",
     padding: "4px 12px",
+    marginTop: "-1px",
   },
   historyItem: {
     display: "flex",
@@ -346,7 +552,7 @@ const styles: Record<string, React.CSSProperties> = {
     paddingBottom: "10px",
     borderBottomWidth: "1px",
     borderBottomStyle: "solid",
-    borderBottomColor: "#4a5568",
+    borderBottomColor: "#e0e0e0",
   },
   historyItemLast: {
     display: "flex",
@@ -356,7 +562,7 @@ const styles: Record<string, React.CSSProperties> = {
     paddingBottom: "10px",
   },
   historyIcon: {
-    color: "#7f8c8d",
+    color: "#888888",
     marginTop: "2px",
     flexShrink: 0,
   },
@@ -369,31 +575,13 @@ const styles: Record<string, React.CSSProperties> = {
   },
   historyLabel: {
     fontSize: "10px",
-    color: "#7f8c8d",
+    color: "#888888",
     textTransform: "uppercase",
   },
   historyValue: {
     fontSize: "13px",
-    color: "#ecf0f1",
+    color: "#2c3e50",
     fontWeight: 500,
-  },
-  textarea: {
-    width: "100%",
-    minHeight: "120px",
-    padding: "12px",
-    backgroundColor: "#34495e",
-    borderWidth: "1px",
-    borderStyle: "solid",
-    borderColor: "#4a5568",
-    borderRadius: "4px",
-    color: "#ecf0f1",
-    fontSize: "13px",
-    resize: "vertical",
-    fontFamily: "inherit",
-  },
-  textareaDisabled: {
-    opacity: 0.6,
-    cursor: "not-allowed",
   },
   actions: {
     display: "flex",

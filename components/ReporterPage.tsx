@@ -7,17 +7,19 @@
 
 import { useEffect, useState, useMemo, useCallback } from "react"
 import { useQuery, useQueryClient, useMutation } from "@tanstack/react-query"
-import { Plus, Zap, Trash2, X, CheckSquare, Square } from "lucide-react"
+import { Plus, Zap, Trash2, X, CheckSquare, Square, PanelLeftClose, PanelLeft, Tags } from "lucide-react"
 import { DragEndEvent, DragStartEvent } from "@dnd-kit/core"
 import { arrayMove } from "@dnd-kit/sortable"
 
 import api, { Segment, Bulletin } from "@/lib/api-client"
+import { generateBulletinRtf, downloadRtf } from "@/lib/rtf-generator"
 import Navbar from "@/components/Navbar"
 import BulletinCreateModal from "@/components/BulletinCreateModal"
 import { createPlaceholderSegment, formatDuration } from "@/types/helpers"
 import { RundownDisplayItem } from "@/types/reporter"
 import BulletinsSidebar from "./reporter/BulletinsSidebar"
 import BulletinEditModal, { BulletinUpdateData } from "./reporter/BulletinEditModal"
+import CategoryModal from "./reporter/CategoryModal"
 import RundownTable from "./reporter/RundownTable"
 import DescriptionPanel from "./reporter/DescriptionPanel"
 import DeleteConfirmModal from "./reporter/DeleteConfirmModal"
@@ -64,12 +66,25 @@ export default function ReporterPage() {
   const [tempSlugValue, setTempSlugValue] = useState("")
   const [editingDurationRowId, setEditingDurationRowId] = useState<string | null>(null)
   const [tempDurationValue, setTempDurationValue] = useState("")
+  // New editing states
+  const [editingProducerRowId, setEditingProducerRowId] = useState<string | null>(null)
+  const [tempProducerValue, setTempProducerValue] = useState("")
+  const [editingActualRowId, setEditingActualRowId] = useState<string | null>(null)
+  const [tempActualValue, setTempActualValue] = useState("")
+  const [editingFrontRowId, setEditingFrontRowId] = useState<string | null>(null)
+  const [tempFrontValue, setTempFrontValue] = useState("")
 
   // ─── Drag State ─────────────────────────────────────────────────
   const [activeId, setActiveId] = useState<string | null>(null)
 
   // ─── Delete Progress ────────────────────────────────────────────
   const [isDeleting, setIsDeleting] = useState(false)
+
+  // ─── Sidebar Toggle ────────────────────────────────────────────
+  const [isSidebarVisible, setIsSidebarVisible] = useState(true)
+
+  // ─── Category Modal ────────────────────────────────────────────
+  const [showCategoryModal, setShowCategoryModal] = useState(false)
 
   // ─── Queries ────────────────────────────────────────────────────
 
@@ -127,10 +142,20 @@ export default function ReporterPage() {
 
   const { data: categoriesData } = useQuery({
     queryKey: ["categories"],
-    queryFn: () => api.categories.list(),
+    queryFn: async () => {
+      const response = await fetch("/api/categories", { credentials: "include" })
+      if (!response.ok) throw new Error("Failed to fetch categories")
+      const data = await response.json()
+      // Handle different response structures
+      if (Array.isArray(data)) return data
+      if (data.data?.categories) return data.data.categories
+      if (data.categories) return data.categories
+      if (Array.isArray(data.data)) return data.data
+      return []
+    },
   })
 
-  const categories = categoriesData?.categories || []
+  const categories = Array.isArray(categoriesData) ? categoriesData : []
 
   // Fetch current user to get their role
   const { data: userData } = useQuery({
@@ -564,6 +589,63 @@ export default function ReporterPage() {
     deleteBulletinMutation.mutate(bulletinId)
   }, [deleteBulletinMutation])
 
+  const handleDownloadBulletin = useCallback(async (bulletinId: string) => {
+    try {
+      // Find the bulletin
+      const bulletin = bulletins.find((b: Bulletin) => b.id === bulletinId)
+      if (!bulletin) {
+        alert("Bulletin not found")
+        return
+      }
+
+      // Fetch bulletin rows with segments using the rows API
+      const response = await fetch(`/api/bulletins/${bulletinId}`)
+      const data = await response.json()
+      const rows = data.data?.rows || []
+
+      // Define row type for mapping
+      interface BulletinRow {
+        id: string
+        pageCode?: string
+        slug?: string
+        segments?: Segment[]
+        estDurationSecs?: number
+        actualDurationSecs?: number
+        lastModifiedBy?: { name?: string }
+      }
+
+      // Prepare data for RTF
+      const bulletinData = {
+        title: bulletin.title,
+        date: bulletin.date,
+        startTime: bulletin.startTime,
+        status: bulletin.status,
+        rows: rows.map((row: BulletinRow) => ({
+          page: row.pageCode || "",
+          slug: row.slug || "",
+          segments: (row.segments || []).map((seg: Segment) => ({
+            name: seg.name,
+            description: seg.description || "",
+          })),
+          estDuration: formatDuration(row.estDurationSecs || 0),
+          actual: row.actualDurationSecs ? formatDuration(row.actualDurationSecs) : "",
+          lastModBy: row.lastModifiedBy?.name || "",
+        })),
+      }
+
+      // Generate RTF
+      const rtfContent = generateBulletinRtf(bulletinData)
+      
+      // Download
+      const filename = `${bulletin.title.replace(/[^a-zA-Z0-9]/g, "_")}_${bulletin.date}.rtf`
+      downloadRtf(rtfContent, filename)
+
+    } catch (error) {
+      console.error("Error downloading bulletin:", error)
+      alert("Failed to download bulletin. Please try again.")
+    }
+  }, [bulletins])
+
   const handleReorderBulletins = useCallback((bulletinIds: string[]) => {
     reorderBulletinsMutation.mutate(bulletinIds)
   }, [reorderBulletinsMutation])
@@ -732,6 +814,125 @@ export default function ReporterPage() {
     setTempDurationValue("")
   }, [])
 
+  // ─── Producer Editing Handlers ────────────────────────────────────
+  // Note: storyProducerId requires a user ID, not a name. For now, we'll store in notes or skip.
+  const handleProducerDoubleClick = useCallback((rowId: string, currentValue: string) => {
+    setEditingProducerRowId(rowId)
+    setTempProducerValue(currentValue || "")
+  }, [])
+
+  const handleProducerSave = useCallback(async () => {
+    if (!editingProducerRowId) {
+      setEditingProducerRowId(null)
+      setTempProducerValue("")
+      return
+    }
+
+    // For now, store producer name in notes field as a workaround
+    // In future, implement proper user selection dropdown
+    try {
+      await updateRowMutation.mutateAsync({
+        id: editingProducerRowId,
+        data: { notes: `Producer: ${tempProducerValue.trim()}` },
+      })
+      showMessage("Producer updated (stored in notes)")
+    } catch {
+      showMessage("Failed to update producer")
+    }
+
+    setEditingProducerRowId(null)
+    setTempProducerValue("")
+  }, [editingProducerRowId, tempProducerValue, updateRowMutation, showMessage])
+
+  const handleProducerCancel = useCallback(() => {
+    setEditingProducerRowId(null)
+    setTempProducerValue("")
+  }, [])
+
+  // ─── Actual Duration Editing Handlers ────────────────────────────────
+  const handleActualDoubleClick = useCallback((rowId: string, currentValue: string) => {
+    setEditingActualRowId(rowId)
+    setTempActualValue(currentValue || "")
+  }, [])
+
+  const handleActualSave = useCallback(async () => {
+    if (!editingActualRowId) {
+      setEditingActualRowId(null)
+      setTempActualValue("")
+      return
+    }
+
+    const seconds = parseDurationToSeconds(tempActualValue)
+    
+    if (tempActualValue.trim() && seconds === null) {
+      showMessage("Invalid duration format. Use M:SS (e.g., 1:30)")
+      setEditingActualRowId(null)
+      setTempActualValue("")
+      return
+    }
+
+    try {
+      await updateRowMutation.mutateAsync({
+        id: editingActualRowId,
+        data: { actualDurationSecs: seconds || 0 },
+      })
+      showMessage("Actual duration updated")
+    } catch {
+      showMessage("Failed to update actual duration")
+    }
+
+    setEditingActualRowId(null)
+    setTempActualValue("")
+  }, [editingActualRowId, tempActualValue, parseDurationToSeconds, updateRowMutation, showMessage])
+
+  const handleActualCancel = useCallback(() => {
+    setEditingActualRowId(null)
+    setTempActualValue("")
+  }, [])
+
+  // ─── Front Time Editing Handlers ────────────────────────────────────
+  // Note: frontTime is a calculated/display field. Store in backTime or calculate from timing.
+  const handleFrontDoubleClick = useCallback((rowId: string, currentValue: string) => {
+    setEditingFrontRowId(rowId)
+    setTempFrontValue(currentValue || "")
+  }, [])
+
+  const handleFrontSave = useCallback(async () => {
+    if (!editingFrontRowId) {
+      setEditingFrontRowId(null)
+      setTempFrontValue("")
+      return
+    }
+
+    // Parse the front time to seconds and store as backTime
+    const seconds = parseDurationToSeconds(tempFrontValue)
+    
+    if (tempFrontValue.trim() && seconds === null) {
+      showMessage("Invalid time format. Use M:SS or H:MM:SS")
+      setEditingFrontRowId(null)
+      setTempFrontValue("")
+      return
+    }
+
+    try {
+      await updateRowMutation.mutateAsync({
+        id: editingFrontRowId,
+        data: { backTime: seconds || 0 },
+      })
+      showMessage("Front time updated")
+    } catch {
+      showMessage("Failed to update front time")
+    }
+
+    setEditingFrontRowId(null)
+    setTempFrontValue("")
+  }, [editingFrontRowId, tempFrontValue, parseDurationToSeconds, updateRowMutation, showMessage])
+
+  const handleFrontCancel = useCallback(() => {
+    setEditingFrontRowId(null)
+    setTempFrontValue("")
+  }, [])
+
   const handleSegmentDoubleClick = useCallback((segment: Segment) => {
     if (segment.id.startsWith("temp-")) return
     setEditingSegmentId(segment.id)
@@ -805,11 +1006,10 @@ export default function ReporterPage() {
   )
 
   const handleDescriptionChange = useCallback(
-    (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    (html: string) => {
       if (!selectedSegmentId || selectedSegmentId.startsWith("temp-")) return
 
-      const newDescription = e.target.value
-      setEditDescription(newDescription)
+      setEditDescription(html)
 
       if (autoSaveTimeout) clearTimeout(autoSaveTimeout)
       setIsSaving(true)
@@ -818,7 +1018,7 @@ export default function ReporterPage() {
         try {
           await updateSegmentMutation.mutateAsync({
             id: selectedSegmentId,
-            data: { description: newDescription },
+            data: { description: html },
           })
           showMessage("Description saved")
           setIsSaving(false)
@@ -964,8 +1164,16 @@ export default function ReporterPage() {
               </div>
             )}
 
-            {selectedForDeleteIds.size === 0 && (
+            {selectedForDeleteIds.size === 0 && (currentUserRole === "ADMIN" || currentUserRole === "EDITOR") && (
               <>
+                <button
+                  className="btn-create-bulletin"
+                  onClick={() => setShowCategoryModal(true)}
+                  style={{ backgroundColor: "#7f8c8d" }}
+                >
+                  <Tags size={16} />
+                  <span>Categories</span>
+                </button>
                 <button
                   className="btn-create-bulletin"
                   onClick={() => autoGenerateMutation.mutate()}
@@ -995,23 +1203,34 @@ export default function ReporterPage() {
         </div>
 
         <div className="main-layout">
-          {/* Bulletins Sidebar */}
-          <BulletinsSidebar
-            bulletins={bulletins}
-            isLoading={bulletinsLoading}
-            selectedBulletinId={selectedBulletin}
-            selectedDate={selectedDate}
-            onSelectBulletin={handleSelectBulletin}
-            onDateChange={handleDateChange}
-            onEditBulletin={handleEditBulletin}
-            onDeleteBulletin={handleDeleteBulletin}
-            onReorderBulletins={handleReorderBulletins}
-            userRole={currentUserRole}
-          />
+          {/* Bulletins Sidebar - Conditionally rendered */}
+          {isSidebarVisible && (
+            <BulletinsSidebar
+              bulletins={bulletins}
+              isLoading={bulletinsLoading}
+              selectedBulletinId={selectedBulletin}
+              selectedDate={selectedDate}
+              onSelectBulletin={handleSelectBulletin}
+              onDateChange={handleDateChange}
+              onEditBulletin={handleEditBulletin}
+              onDeleteBulletin={handleDeleteBulletin}
+              onDownloadBulletin={handleDownloadBulletin}
+              onReorderBulletins={handleReorderBulletins}
+              userRole={currentUserRole}
+            />
+          )}
 
           {/* Main Rundown Area */}
-          <div className="rundown-scroll-wrapper">
+          <div className="rundown-scroll-wrapper" style={{ flex: 1 }}>
             <div className="rundown-header">
+              {/* Sidebar Toggle Button */}
+              <button
+                style={styles.sidebarToggleBtn}
+                onClick={() => setIsSidebarVisible(!isSidebarVisible)}
+                title={isSidebarVisible ? "Hide sidebar" : "Show sidebar"}
+              >
+                {isSidebarVisible ? <PanelLeftClose size={18} /> : <PanelLeft size={18} />}
+              </button>
               <div className="rundown-title">{bulletinHeader}</div>
               {reorderRowsMutation.isPending && (
                 <span style={styles.reorderIndicator}>Saving order...</span>
@@ -1032,6 +1251,12 @@ export default function ReporterPage() {
               addingSegmentForRowId={addingSegmentForRowId}
               editingDurationRowId={editingDurationRowId}
               tempDurationValue={tempDurationValue}
+              editingProducerRowId={editingProducerRowId}
+              tempProducerValue={tempProducerValue}
+              editingActualRowId={editingActualRowId}
+              tempActualValue={tempActualValue}
+              editingFrontRowId={editingFrontRowId}
+              tempFrontValue={tempFrontValue}
               onDragStart={handleDragStart}
               onDragEnd={handleDragEnd}
               onRowClick={handleRowClick}
@@ -1054,6 +1279,18 @@ export default function ReporterPage() {
               onDurationChange={setTempDurationValue}
               onDurationSave={handleDurationSave}
               onDurationCancel={handleDurationCancel}
+              onProducerDoubleClick={handleProducerDoubleClick}
+              onProducerChange={setTempProducerValue}
+              onProducerSave={handleProducerSave}
+              onProducerCancel={handleProducerCancel}
+              onActualDoubleClick={handleActualDoubleClick}
+              onActualChange={setTempActualValue}
+              onActualSave={handleActualSave}
+              onActualCancel={handleActualCancel}
+              onFrontDoubleClick={handleFrontDoubleClick}
+              onFrontChange={setTempFrontValue}
+              onFrontSave={handleFrontSave}
+              onFrontCancel={handleFrontCancel}
             />
 
             {/* Add Story Button */}
@@ -1113,6 +1350,11 @@ export default function ReporterPage() {
         onSave={handleSaveBulletin}
         isSaving={updateBulletinMutation.isPending}
       />
+
+      <CategoryModal
+        isOpen={showCategoryModal}
+        onClose={() => setShowCategoryModal(false)}
+      />
       
       <DeleteConfirmModal
         isOpen={showDeleteModal}
@@ -1133,6 +1375,23 @@ export default function ReporterPage() {
 // ─── Styles ─────────────────────────────────────────────────────
 
 const styles: Record<string, React.CSSProperties> = {
+  sidebarToggleBtn: {
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    width: "32px",
+    height: "32px",
+    backgroundColor: "transparent",
+    borderWidth: "1px",
+    borderStyle: "solid",
+    borderColor: "#4a5568",
+    borderRadius: "6px",
+    color: "#95a5a6",
+    cursor: "pointer",
+    marginRight: "12px",
+    transition: "all 0.2s",
+    flexShrink: 0,
+  },
   deleteSelectionBar: {
     display: "flex",
     alignItems: "center",

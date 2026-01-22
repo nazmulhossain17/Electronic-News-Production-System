@@ -1,6 +1,4 @@
 import { NextRequest } from "next/server"
-import { db } from "@/lib/db"
-import { user, appUsers } from "@/lib/schema"
 import { eq } from "drizzle-orm"
 import { requireRole } from "@/lib/auth"
 import {
@@ -12,6 +10,8 @@ import {
 } from "@/lib/api-response"
 import { z } from "zod"
 import { logActivity } from "@/lib/rundown-service"
+import db from "@/db"
+import { appUsers, user } from "@/db/schema"
 
 const updateUserSchema = z.object({
   displayName: z.string().max(50).optional(),

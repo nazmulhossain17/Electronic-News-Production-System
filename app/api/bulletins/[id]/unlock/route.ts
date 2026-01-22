@@ -1,6 +1,6 @@
 import { NextRequest } from "next/server"
-import { db } from "@/lib/db"
-import { bulletins } from "@/lib/schema"
+import { db } from "@/db"
+import { bulletins } from "@/db/schema"
 import { eq } from "drizzle-orm"
 import { requireRole } from "@/lib/auth"
 import {

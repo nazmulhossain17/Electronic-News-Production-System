@@ -80,8 +80,6 @@ CREATE TABLE "bulletins" (
 CREATE TABLE "categories" (
 	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
 	"name" varchar(100) NOT NULL,
-	"code" varchar(20) NOT NULL,
-	"description" text,
 	"color" varchar(7) DEFAULT '#3498db',
 	"desk_id" uuid,
 	"is_active" boolean DEFAULT true NOT NULL,
@@ -246,7 +244,7 @@ CREATE INDEX "bulletins_air_date_idx" ON "bulletins" USING btree ("air_date");--
 CREATE INDEX "bulletins_status_idx" ON "bulletins" USING btree ("status");--> statement-breakpoint
 CREATE INDEX "bulletins_producer_id_idx" ON "bulletins" USING btree ("producer_id");--> statement-breakpoint
 CREATE INDEX "bulletins_desk_id_idx" ON "bulletins" USING btree ("desk_id");--> statement-breakpoint
-CREATE INDEX "categories_code_idx" ON "categories" USING btree ("code");--> statement-breakpoint
+CREATE INDEX "categories_name_idx" ON "categories" USING btree ("name");--> statement-breakpoint
 CREATE INDEX "categories_desk_id_idx" ON "categories" USING btree ("desk_id");--> statement-breakpoint
 CREATE INDEX "desks_code_idx" ON "desks" USING btree ("code");--> statement-breakpoint
 CREATE INDEX "pool_stories_pool_id_idx" ON "pool_stories" USING btree ("pool_id");--> statement-breakpoint
