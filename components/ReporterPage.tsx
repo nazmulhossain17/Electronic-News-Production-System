@@ -192,9 +192,34 @@ export default function ReporterPage() {
     onError: () => showMessage("Failed to auto-generate bulletins"),
   })
 
+  // Extended row update data type to include new fields
+  type ExtendedRowUpdateData = {
+    slug?: string
+    segment?: string
+    rowType?: string
+    storyProducerId?: string | null
+    storyProducer?: string | null  // New field
+    reporterId?: string | null
+    estDurationSecs?: number
+    actualDurationSecs?: number | null
+    frontTime?: string | null  // New field
+    float?: boolean
+    finalApproval?: boolean
+    script?: string | null
+    notes?: string | null
+    categoryId?: string | null
+  }
+
   const updateRowMutation = useMutation({
-    mutationFn: async ({ id, data }: { id: string; data: Parameters<typeof api.rows.update>[1] }) => {
-      return api.rows.update(id, data)
+    mutationFn: async ({ id, data }: { id: string; data: ExtendedRowUpdateData }) => {
+      const response = await fetch(`/api/rows/${id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify(data),
+      })
+      if (!response.ok) throw new Error("Failed to update row")
+      return response.json()
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["bulletin", selectedBulletin] })
@@ -904,20 +929,10 @@ export default function ReporterPage() {
       return
     }
 
-    // Parse the front time to seconds and store as backTime
-    const seconds = parseDurationToSeconds(tempFrontValue)
-    
-    if (tempFrontValue.trim() && seconds === null) {
-      showMessage("Invalid time format. Use M:SS or H:MM:SS")
-      setEditingFrontRowId(null)
-      setTempFrontValue("")
-      return
-    }
-
     try {
       await updateRowMutation.mutateAsync({
         id: editingFrontRowId,
-        data: { backTime: seconds || 0 },
+        data: { frontTime: tempFrontValue.trim() || null },
       })
       showMessage("Front time updated")
     } catch {
@@ -926,7 +941,7 @@ export default function ReporterPage() {
 
     setEditingFrontRowId(null)
     setTempFrontValue("")
-  }, [editingFrontRowId, tempFrontValue, parseDurationToSeconds, updateRowMutation, showMessage])
+  }, [editingFrontRowId, tempFrontValue, updateRowMutation, showMessage])
 
   const handleFrontCancel = useCallback(() => {
     setEditingFrontRowId(null)

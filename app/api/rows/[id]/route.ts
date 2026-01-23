@@ -1,3 +1,8 @@
+// ============================================================================
+// File: app/api/rows/[id]/route.ts
+// Description: API route for individual row CRUD operations
+// ============================================================================
+
 import { NextRequest, NextResponse } from "next/server"
 import { auth } from "@/lib/auth-config"
 import db from "@/db"
@@ -11,10 +16,12 @@ const updateRowSchema = z.object({
   rowType: z.enum(["STORY", "COMMERCIAL", "BREAK_LINK", "OPEN", "CLOSE", "WELCOME"]).optional(),
   status: z.enum(["BLANK", "DRAFT", "READY", "APPROVED", "KILLED", "AIRED"]).optional(),
   storyProducerId: z.string().optional().nullable(),
+  storyProducer: z.string().optional().nullable(), // New: producer name as text
   reporterId: z.string().optional().nullable(),
   categoryId: z.string().uuid().optional().nullable(),
   estDurationSecs: z.number().int().min(0).optional(),
   actualDurationSecs: z.number().int().min(0).optional().nullable(),
+  frontTime: z.string().optional().nullable(), // New: front time as text (H:MM:SS)
   float: z.boolean().optional(),
   finalApproval: z.boolean().optional(),
   script: z.string().optional().nullable(),
@@ -101,6 +108,9 @@ export async function PUT(
     if (validatedData.storyProducerId !== undefined) {
       updateData.storyProducerId = validatedData.storyProducerId
     }
+    if (validatedData.storyProducer !== undefined) {
+      updateData.storyProducer = validatedData.storyProducer
+    }
     if (validatedData.reporterId !== undefined) {
       updateData.reporterId = validatedData.reporterId
     }
@@ -112,6 +122,9 @@ export async function PUT(
     }
     if (validatedData.actualDurationSecs !== undefined) {
       updateData.actualDurationSecs = validatedData.actualDurationSecs
+    }
+    if (validatedData.frontTime !== undefined) {
+      updateData.frontTime = validatedData.frontTime
     }
     if (validatedData.float !== undefined) {
       updateData.float = validatedData.float
