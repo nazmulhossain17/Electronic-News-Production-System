@@ -1,4 +1,8 @@
-// middleware.ts
+// ============================================================================
+// File: middleware.ts
+// Description: Next.js middleware for authentication and route protection
+// ============================================================================
+
 import { type NextRequest, NextResponse } from "next/server"
 import { betterFetch } from "@better-fetch/fetch"
 
@@ -6,7 +10,10 @@ import { betterFetch } from "@better-fetch/fetch"
 const publicRoutes = ["/", "/register", "/forgot-password", "/reset-password"]
 
 // Routes that require authentication
-const protectedRoutes = ["/enps", "/app-user-setup", "/dashboard", "/admin"]
+const protectedRoutes = ["/enps", "/reporter", "/app-user-setup", "/dashboard", "/admin", "/trash"]
+
+// Routes that require ADMIN role
+const adminOnlyRoutes = ["/admin", "/trash"]
 
 type Session = {
   session: {
@@ -18,6 +25,7 @@ type Session = {
     id: string
     name: string
     email: string
+    role?: string
   }
 } | null
 
@@ -43,6 +51,11 @@ export async function proxy(request: NextRequest) {
     (route) => pathname === route || pathname.startsWith(`${route}/`)
   )
 
+  // Check if current path is admin-only
+  const isAdminOnlyRoute = adminOnlyRoutes.some(
+    (route) => pathname === route || pathname.startsWith(`${route}/`)
+  )
+
   // Check if current path is public auth page
   const isAuthPage = pathname === "/" || pathname === "/register"
 
@@ -60,6 +73,7 @@ export async function proxy(request: NextRequest) {
     )
 
     const isAuthenticated = !!session?.session
+    const userRole = session?.user?.role
 
     // Redirect to login if accessing protected route without auth
     if (isProtectedRoute && !isAuthenticated) {
@@ -68,9 +82,17 @@ export async function proxy(request: NextRequest) {
       return NextResponse.redirect(loginUrl)
     }
 
-    // Redirect to /enps if authenticated user visits login page
+    // Check admin-only routes
+    if (isAdminOnlyRoute && isAuthenticated) {
+      if (userRole !== "ADMIN") {
+        // Redirect non-admins to reporter page
+        return NextResponse.redirect(new URL("/reporter", request.url))
+      }
+    }
+
+    // Redirect to /reporter if authenticated user visits login page
     if (isAuthPage && isAuthenticated) {
-      return NextResponse.redirect(new URL("/enps", request.url))
+      return NextResponse.redirect(new URL("/reporter", request.url))
     }
   }
 

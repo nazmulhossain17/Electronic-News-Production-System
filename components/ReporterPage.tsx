@@ -383,7 +383,7 @@ export default function ReporterPage() {
         front: row.frontTimeDisplay || "",
         cume: row.cumeTimeDisplay || formatDuration(row.cumeTimeSecs),
         lastModBy: row.lastModifiedByName || "SYSTEM",
-        createdByName: row.createdAt || row.lastModifiedByName || "SYSTEM", // Fallback to lastModifiedBy
+        createdByName: row.createdByName || row.lastModifiedByName || "SYSTEM", // Fallback to lastModifiedBy
         categoryId: row.categoryId || "",
         status: row.status,
         script: row.script,
@@ -1179,6 +1179,16 @@ export default function ReporterPage() {
               </div>
             )}
 
+            {selectedForDeleteIds.size === 0 && currentUserRole === "ADMIN" && (
+              <a
+                href="/trash"
+                className="btn-create-bulletin"
+                style={{ backgroundColor: "#95a5a6", textDecoration: "none" }}
+              >
+                <Trash2 size={16} />
+                <span>Trash</span>
+              </a>
+            )}
             {selectedForDeleteIds.size === 0 && (currentUserRole === "ADMIN" || currentUserRole === "EDITOR") && (
               <>
                 <button

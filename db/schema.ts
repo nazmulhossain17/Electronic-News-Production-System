@@ -247,7 +247,7 @@ export const categories = pgTable(
       .notNull(),
   },
   (table) => [
-    index("categories_name_idx").on(table.name),  // Changed from code to name
+    index("categories_name_idx").on(table.name),
     index("categories_desk_id_idx").on(table.deskId),
   ]
 )
@@ -301,12 +301,17 @@ export const bulletins = pgTable(
       .defaultNow()
       .$onUpdate(() => new Date())
       .notNull(),
+
+    // Soft Delete
+    deletedAt: timestamp("deleted_at"),
+    deletedBy: text("deleted_by").references(() => user.id),
   },
   (table) => [
     index("bulletins_air_date_idx").on(table.airDate),
     index("bulletins_status_idx").on(table.status),
     index("bulletins_producer_id_idx").on(table.producerId),
     index("bulletins_desk_id_idx").on(table.deskId),
+    index("bulletins_deleted_at_idx").on(table.deletedAt),
   ]
 )
 
@@ -335,6 +340,7 @@ export const rundownRows = pgTable(
 
     // Assignment
     storyProducerId: text("story_producer_id").references(() => user.id),
+    storyProducer: varchar("story_producer", { length: 100 }), // Producer name as text (for quick editing)
     reporterId: text("reporter_id").references(() => user.id),
     categoryId: uuid("category_id").references(() => categories.id),
 
@@ -347,6 +353,7 @@ export const rundownRows = pgTable(
     estDurationSecs: integer("est_duration_secs").default(90),
     actualDurationSecs: integer("actual_duration_secs"),
     frontTimeSecs: integer("front_time_secs").default(0),
+    frontTime: varchar("front_time", { length: 20 }), // Front time as text (H:MM:SS format)
     cumeTimeSecs: integer("cume_time_secs").default(0),
 
     // Flags
@@ -366,11 +373,16 @@ export const rundownRows = pgTable(
       .defaultNow()
       .$onUpdate(() => new Date())
       .notNull(),
+
+    // Soft Delete
+    deletedAt: timestamp("deleted_at"),
+    deletedBy: text("deleted_by").references(() => user.id),
   },
   (table) => [
     index("rundown_rows_bulletin_id_idx").on(table.bulletinId),
     index("rundown_rows_sort_order_idx").on(table.sortOrder),
     index("rundown_rows_status_idx").on(table.status),
+    index("rundown_rows_deleted_at_idx").on(table.deletedAt),
   ]
 )
 
@@ -411,6 +423,7 @@ export const rowSegments = pgTable(
     index("row_segments_sort_order_idx").on(table.sortOrder),
   ]
 )
+
 /* ═══════════════════════════════════════════════════════════════════════════════
    STORY POOLS
    ═══════════════════════════════════════════════════════════════════════════════ */
@@ -601,6 +614,11 @@ export const bulletinsRelations = relations(bulletins, ({ one, many }) => ({
     fields: [bulletins.lockedBy],
     references: [user.id],
   }),
+  deletedByUser: one(user, {
+    relationName: "bulletinDeleter",
+    fields: [bulletins.deletedBy],
+    references: [user.id],
+  }),
   rows: many(rundownRows),
   activities: many(activityLogs),
 }))
@@ -612,7 +630,7 @@ export const rundownRowsRelations = relations(rundownRows, ({ one, many }) => ({
     references: [bulletins.id],
   }),
   segments: many(rowSegments),
-  storyProducer: one(user, {
+  storyProducerUser: one(user, {
     relationName: "storyProducer",
     fields: [rundownRows.storyProducerId],
     references: [user.id],
@@ -634,6 +652,11 @@ export const rundownRowsRelations = relations(rundownRows, ({ one, many }) => ({
   lastModifiedByUser: one(user, {
     relationName: "lastModifier",
     fields: [rundownRows.lastModifiedBy],
+    references: [user.id],
+  }),
+  deletedByUser: one(user, {
+    relationName: "rowDeleter",
+    fields: [rundownRows.deletedBy],
     references: [user.id],
   }),
 }))

@@ -74,7 +74,9 @@ CREATE TABLE "bulletins" (
 	"notes" text,
 	"created_by" text NOT NULL,
 	"created_at" timestamp DEFAULT now() NOT NULL,
-	"updated_at" timestamp DEFAULT now() NOT NULL
+	"updated_at" timestamp DEFAULT now() NOT NULL,
+	"deleted_at" timestamp,
+	"deleted_by" text
 );
 --> statement-breakpoint
 CREATE TABLE "categories" (
@@ -156,6 +158,7 @@ CREATE TABLE "rundown_rows" (
 	"slug" varchar(255),
 	"segment" varchar(50),
 	"story_producer_id" text,
+	"story_producer" varchar(100),
 	"reporter_id" text,
 	"category_id" uuid,
 	"final_approval" boolean DEFAULT false,
@@ -164,6 +167,7 @@ CREATE TABLE "rundown_rows" (
 	"est_duration_secs" integer DEFAULT 90,
 	"actual_duration_secs" integer,
 	"front_time_secs" integer DEFAULT 0,
+	"front_time" varchar(20),
 	"cume_time_secs" integer DEFAULT 0,
 	"float" boolean DEFAULT false,
 	"status" "row_status" DEFAULT 'BLANK' NOT NULL,
@@ -171,7 +175,9 @@ CREATE TABLE "rundown_rows" (
 	"notes" text,
 	"last_modified_by" text,
 	"created_at" timestamp DEFAULT now() NOT NULL,
-	"updated_at" timestamp DEFAULT now() NOT NULL
+	"updated_at" timestamp DEFAULT now() NOT NULL,
+	"deleted_at" timestamp,
+	"deleted_by" text
 );
 --> statement-breakpoint
 CREATE TABLE "session" (
@@ -216,6 +222,7 @@ ALTER TABLE "bulletins" ADD CONSTRAINT "bulletins_locked_by_user_id_fk" FOREIGN 
 ALTER TABLE "bulletins" ADD CONSTRAINT "bulletins_producer_id_user_id_fk" FOREIGN KEY ("producer_id") REFERENCES "public"."user"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "bulletins" ADD CONSTRAINT "bulletins_desk_id_desks_id_fk" FOREIGN KEY ("desk_id") REFERENCES "public"."desks"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "bulletins" ADD CONSTRAINT "bulletins_created_by_user_id_fk" FOREIGN KEY ("created_by") REFERENCES "public"."user"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "bulletins" ADD CONSTRAINT "bulletins_deleted_by_user_id_fk" FOREIGN KEY ("deleted_by") REFERENCES "public"."user"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "categories" ADD CONSTRAINT "categories_desk_id_desks_id_fk" FOREIGN KEY ("desk_id") REFERENCES "public"."desks"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "pool_stories" ADD CONSTRAINT "pool_stories_pool_id_pools_id_fk" FOREIGN KEY ("pool_id") REFERENCES "public"."pools"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "pool_stories" ADD CONSTRAINT "pool_stories_reporter_id_user_id_fk" FOREIGN KEY ("reporter_id") REFERENCES "public"."user"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
@@ -231,6 +238,7 @@ ALTER TABLE "rundown_rows" ADD CONSTRAINT "rundown_rows_reporter_id_user_id_fk" 
 ALTER TABLE "rundown_rows" ADD CONSTRAINT "rundown_rows_category_id_categories_id_fk" FOREIGN KEY ("category_id") REFERENCES "public"."categories"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "rundown_rows" ADD CONSTRAINT "rundown_rows_approved_by_user_id_fk" FOREIGN KEY ("approved_by") REFERENCES "public"."user"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "rundown_rows" ADD CONSTRAINT "rundown_rows_last_modified_by_user_id_fk" FOREIGN KEY ("last_modified_by") REFERENCES "public"."user"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "rundown_rows" ADD CONSTRAINT "rundown_rows_deleted_by_user_id_fk" FOREIGN KEY ("deleted_by") REFERENCES "public"."user"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "session" ADD CONSTRAINT "session_user_id_user_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."user"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 CREATE INDEX "account_user_id_idx" ON "account" USING btree ("user_id");--> statement-breakpoint
 CREATE INDEX "activity_logs_user_id_idx" ON "activity_logs" USING btree ("user_id");--> statement-breakpoint
@@ -244,6 +252,7 @@ CREATE INDEX "bulletins_air_date_idx" ON "bulletins" USING btree ("air_date");--
 CREATE INDEX "bulletins_status_idx" ON "bulletins" USING btree ("status");--> statement-breakpoint
 CREATE INDEX "bulletins_producer_id_idx" ON "bulletins" USING btree ("producer_id");--> statement-breakpoint
 CREATE INDEX "bulletins_desk_id_idx" ON "bulletins" USING btree ("desk_id");--> statement-breakpoint
+CREATE INDEX "bulletins_deleted_at_idx" ON "bulletins" USING btree ("deleted_at");--> statement-breakpoint
 CREATE INDEX "categories_name_idx" ON "categories" USING btree ("name");--> statement-breakpoint
 CREATE INDEX "categories_desk_id_idx" ON "categories" USING btree ("desk_id");--> statement-breakpoint
 CREATE INDEX "desks_code_idx" ON "desks" USING btree ("code");--> statement-breakpoint
@@ -257,6 +266,7 @@ CREATE INDEX "row_segments_sort_order_idx" ON "row_segments" USING btree ("sort_
 CREATE INDEX "rundown_rows_bulletin_id_idx" ON "rundown_rows" USING btree ("bulletin_id");--> statement-breakpoint
 CREATE INDEX "rundown_rows_sort_order_idx" ON "rundown_rows" USING btree ("sort_order");--> statement-breakpoint
 CREATE INDEX "rundown_rows_status_idx" ON "rundown_rows" USING btree ("status");--> statement-breakpoint
+CREATE INDEX "rundown_rows_deleted_at_idx" ON "rundown_rows" USING btree ("deleted_at");--> statement-breakpoint
 CREATE INDEX "session_user_id_idx" ON "session" USING btree ("user_id");--> statement-breakpoint
 CREATE INDEX "session_token_idx" ON "session" USING btree ("token");--> statement-breakpoint
 CREATE INDEX "user_email_idx" ON "user" USING btree ("email");--> statement-breakpoint

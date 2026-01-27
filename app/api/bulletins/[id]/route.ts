@@ -7,7 +7,7 @@ import { NextRequest, NextResponse } from "next/server"
 import { auth } from "@/lib/auth-config"
 import db from "@/db"
 import { bulletins, rundownRows, user } from "@/db/schema"
-import { eq, asc } from "drizzle-orm"
+import { eq, asc, isNull, and } from "drizzle-orm"
 
 // Helper to format duration
 function formatDuration(seconds: number | null | undefined): string {
@@ -30,18 +30,18 @@ export async function GET(
 
     const { id } = await params
 
-    // Get bulletin
+    // Get bulletin (exclude soft-deleted)
     const [bulletin] = await db
       .select()
       .from(bulletins)
-      .where(eq(bulletins.id, id))
+      .where(and(eq(bulletins.id, id), isNull(bulletins.deletedAt)))
       .limit(1)
 
     if (!bulletin) {
       return NextResponse.json({ error: "Bulletin not found" }, { status: 404 })
     }
 
-    // Get rows with lastModifiedBy user info
+    // Get rows with lastModifiedBy user info (exclude soft-deleted rows)
     const rows = await db
       .select({
         id: rundownRows.id,
@@ -75,7 +75,7 @@ export async function GET(
       })
       .from(rundownRows)
       .leftJoin(user, eq(rundownRows.lastModifiedBy, user.id))
-      .where(eq(rundownRows.bulletinId, id))
+      .where(and(eq(rundownRows.bulletinId, id), isNull(rundownRows.deletedAt)))
       .orderBy(asc(rundownRows.sortOrder))
 
     // Format rows with display values
@@ -180,7 +180,7 @@ export async function PUT(
   }
 }
 
-// DELETE - Delete bulletin
+// DELETE - Soft delete bulletin (moves to trash for 7 days)
 export async function DELETE(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
@@ -204,10 +204,24 @@ export async function DELETE(
       return NextResponse.json({ error: "Bulletin not found" }, { status: 404 })
     }
 
-    // Delete bulletin (cascade will delete rows and segments)
-    await db.delete(bulletins).where(eq(bulletins.id, id))
+    // Soft delete bulletin (set deletedAt and deletedBy)
+    const [deletedBulletin] = await db
+      .update(bulletins)
+      .set({
+        deletedAt: new Date(),
+        deletedBy: session.user.id,
+        updatedAt: new Date(),
+      })
+      .where(eq(bulletins.id, id))
+      .returning()
 
-    return NextResponse.json({ success: true, id })
+    console.log(`🗑️ Soft deleted bulletin: ${deletedBulletin.title} (will be permanently deleted in 7 days)`)
+
+    return NextResponse.json({ 
+      success: true, 
+      id,
+      message: "Bulletin moved to trash. It will be permanently deleted in 7 days.",
+    })
   } catch (error) {
     console.error("Delete bulletin error:", error)
     return NextResponse.json(

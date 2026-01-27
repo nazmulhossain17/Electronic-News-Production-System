@@ -173,7 +173,7 @@ export async function PUT(
   }
 }
 
-// DELETE - Delete row
+// DELETE - Soft delete row (moves to trash for 7 days)
 export async function DELETE(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
@@ -197,15 +197,24 @@ export async function DELETE(
       return NextResponse.json({ error: "Row not found" }, { status: 404 })
     }
 
-    // Delete segments first (if any)
-    await db.delete(rowSegments).where(eq(rowSegments.rowId, id))
+    // Soft delete the row (set deletedAt and deletedBy)
+    const [deletedRow] = await db
+      .update(rundownRows)
+      .set({
+        deletedAt: new Date(),
+        deletedBy: session.user.id,
+        updatedAt: new Date(),
+      })
+      .where(eq(rundownRows.id, id))
+      .returning()
 
-    // Delete the row
-    await db.delete(rundownRows).where(eq(rundownRows.id, id))
+    console.log(`🗑️ Soft deleted row ${id}: ${deletedRow.slug} (will be permanently deleted in 7 days)`)
 
-    console.log(`✅ Deleted row ${id} and its segments`)
-
-    return NextResponse.json({ success: true, id })
+    return NextResponse.json({ 
+      success: true, 
+      id,
+      message: "Story moved to trash. It will be permanently deleted in 7 days.",
+    })
   } catch (error) {
     console.error("Delete row error:", error)
     return NextResponse.json(
