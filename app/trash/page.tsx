@@ -25,7 +25,8 @@ interface DeletedBulletin {
   id: string
   type: "bulletin"
   title: string
-  date: string
+  date: string | null
+  airDate: string | null
   startTime: string
   status: string
   deletedAt: string
@@ -45,8 +46,6 @@ interface DeletedRow {
   daysLeft: number
 }
 
-type DeletedItem = DeletedBulletin | DeletedRow
-
 export default function TrashPage() {
   const router = useRouter()
   const queryClient = useQueryClient()
@@ -62,17 +61,19 @@ export default function TrashPage() {
       try {
         const response = await fetch("/api/me", { credentials: "include" })
         if (!response.ok) {
-          router.push("/login")
+          router.push("/")
           return
         }
-        const data = await response.json()
-        if (data.user?.role !== "ADMIN") {
-          router.push("/reporter")
+        const result = await response.json()
+        // Response format: { success: true, data: { user: { role: "ADMIN" } } }
+        const userRole = result?.data?.user?.role
+        if (userRole !== "ADMIN") {
+          router.push("/enps")
           return
         }
-        setUserRole(data.user.role)
+        setUserRole(userRole)
       } catch {
-        router.push("/login")
+        router.push("/")
       } finally {
         setIsCheckingAuth(false)
       }
@@ -168,8 +169,8 @@ export default function TrashPage() {
   // Filter items based on search term
   const filteredBulletins = bulletins.filter(
     (b) =>
-      b.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      b.date.includes(searchTerm)
+      (b.title || "").toLowerCase().includes(searchTerm.toLowerCase()) ||
+      (b.date || "").includes(searchTerm)
   )
 
   const filteredRows = rows.filter(
@@ -183,6 +184,14 @@ export default function TrashPage() {
 
   const formatDate = (dateStr: string) => {
     return new Date(dateStr).toLocaleString()
+  }
+
+  const formatDisplayDate = (item: DeletedBulletin) => {
+    if (item.date) return item.date
+    if (item.airDate) {
+      return new Date(item.airDate).toLocaleDateString()
+    }
+    return "N/A"
   }
 
   const getDaysLeftColor = (daysLeft: number) => {
@@ -202,7 +211,7 @@ export default function TrashPage() {
       {/* Header */}
       <header style={styles.header}>
         <div style={styles.headerLeft}>
-          <button style={styles.backBtn} onClick={() => router.push("/reporter")}>
+          <button style={styles.backBtn} onClick={() => router.push("/enps")}>
             <ArrowLeft size={20} />
           </button>
           <div style={styles.headerTitle}>
@@ -221,7 +230,7 @@ export default function TrashPage() {
             onClick={() => cleanupMutation.mutate()}
             disabled={cleanupMutation.isPending}
           >
-            <RefreshCw size={16} className={cleanupMutation.isPending ? "spin" : ""} />
+            <RefreshCw size={16} style={cleanupMutation.isPending ? { animation: "spin 1s linear infinite" } : {}} />
             {cleanupMutation.isPending ? "Cleaning..." : "Run Cleanup"}
           </button>
         </div>
@@ -239,7 +248,7 @@ export default function TrashPage() {
       {/* Search and Tabs */}
       <div style={styles.toolbar}>
         <div style={styles.searchContainer}>
-          <Search size={18} style={styles.searchIcon} />
+          <Search size={18} style={styles.searchIcon as React.CSSProperties} />
           <input
             type="text"
             placeholder="Search deleted items..."
@@ -318,7 +327,7 @@ export default function TrashPage() {
                   </div>
                   <h3 style={styles.itemTitle}>{item.title}</h3>
                   <div style={styles.itemMeta}>
-                    <span>{item.date}</span>
+                    <span>{formatDisplayDate(item)}</span>
                     <span>•</span>
                     <span>{item.startTime}</span>
                     <span>•</span>
@@ -457,6 +466,14 @@ export default function TrashPage() {
           </div>
         )}
       </div>
+
+      {/* CSS Animation for spinner */}
+      <style jsx global>{`
+        @keyframes spin {
+          from { transform: rotate(0deg); }
+          to { transform: rotate(360deg); }
+        }
+      `}</style>
     </div>
   )
 }
@@ -569,12 +586,12 @@ const styles: Record<string, React.CSSProperties> = {
     borderBottom: "1px solid #334155",
   },
   searchContainer: {
-    position: "relative",
+    position: "relative" as const,
     flex: 1,
     maxWidth: "400px",
   },
   searchIcon: {
-    position: "absolute",
+    position: "absolute" as const,
     left: "12px",
     top: "50%",
     transform: "translateY(-50%)",
@@ -629,7 +646,7 @@ const styles: Record<string, React.CSSProperties> = {
   },
   emptyState: {
     display: "flex",
-    flexDirection: "column",
+    flexDirection: "column" as const,
     alignItems: "center",
     justifyContent: "center",
     gap: "16px",
@@ -678,7 +695,7 @@ const styles: Record<string, React.CSSProperties> = {
     gap: "6px",
     color: "#64748b",
     fontSize: "12px",
-    textTransform: "uppercase",
+    textTransform: "uppercase" as const,
     letterSpacing: "0.5px",
   },
   daysLeftBadge: {

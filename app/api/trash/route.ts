@@ -6,7 +6,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { auth } from "@/lib/auth-config"
 import db from "@/db"
-import { bulletins, rundownRows, user } from "@/db/schema"
+import { bulletins, rundownRows, user, appUsers } from "@/db/schema"
 import { eq, isNotNull, and, lt, sql } from "drizzle-orm"
 
 // GET - List all deleted items (within 7 days)
@@ -88,6 +88,17 @@ export async function GET(request: NextRequest) {
   }
 }
 
+// Helper to get user role from appUsers table
+async function getUserRole(userId: string): Promise<string | null> {
+  const [appUser] = await db
+    .select({ role: appUsers.role })
+    .from(appUsers)
+    .where(eq(appUsers.userId, userId))
+    .limit(1)
+  
+  return appUser?.role || null
+}
+
 // DELETE - Permanently delete items older than 7 days (cleanup job)
 export async function DELETE(request: NextRequest) {
   try {
@@ -96,8 +107,9 @@ export async function DELETE(request: NextRequest) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
     }
 
-    // Only admins can run cleanup
-    const userRole = (session.user as { role?: string }).role
+    // Get role from appUsers table
+    const userRole = await getUserRole(session.user.id)
+    
     if (userRole !== "ADMIN") {
       return NextResponse.json({ error: "Admin access required" }, { status: 403 })
     }

@@ -6,7 +6,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { auth } from "@/lib/auth-config"
 import db from "@/db"
-import { bulletins, rundownRows, rowSegments } from "@/db/schema"
+import { bulletins, rundownRows, rowSegments, appUsers } from "@/db/schema"
 import { eq, isNotNull, and } from "drizzle-orm"
 import { z } from "zod"
 
@@ -15,7 +15,18 @@ const permanentDeleteSchema = z.object({
   id: z.string().uuid(),
 })
 
-// POST - Permanently delete an item
+// Helper to get user role from appUsers table
+async function getUserRole(userId: string): Promise<string | null> {
+  const [appUser] = await db
+    .select({ role: appUsers.role })
+    .from(appUsers)
+    .where(eq(appUsers.userId, userId))
+    .limit(1)
+  
+  return appUser?.role || null
+}
+
+// POST - Permanently delete an item (Admin only)
 export async function POST(request: NextRequest) {
   try {
     const session = await auth.api.getSession({ headers: request.headers })
@@ -23,10 +34,11 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
     }
 
-    // Only admins and editors can permanently delete
-    const userRole = (session.user as { role?: string }).role
-    if (!["ADMIN", "EDITOR"].includes(userRole || "")) {
-      return NextResponse.json({ error: "Admin or Editor access required" }, { status: 403 })
+    // Get role from appUsers table
+    const userRole = await getUserRole(session.user.id)
+    
+    if (userRole !== "ADMIN") {
+      return NextResponse.json({ error: "Admin access required" }, { status: 403 })
     }
 
     const body = await request.json()

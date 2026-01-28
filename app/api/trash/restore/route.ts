@@ -6,7 +6,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { auth } from "@/lib/auth-config"
 import db from "@/db"
-import { bulletins, rundownRows } from "@/db/schema"
+import { bulletins, rundownRows, appUsers } from "@/db/schema"
 import { eq } from "drizzle-orm"
 import { z } from "zod"
 
@@ -14,6 +14,17 @@ const restoreSchema = z.object({
   type: z.enum(["bulletin", "row"]),
   id: z.string().uuid(),
 })
+
+// Helper to get user role from appUsers table
+async function getUserRole(userId: string): Promise<string | null> {
+  const [appUser] = await db
+    .select({ role: appUsers.role })
+    .from(appUsers)
+    .where(eq(appUsers.userId, userId))
+    .limit(1)
+  
+  return appUser?.role || null
+}
 
 // POST - Restore a deleted item (Admin only)
 export async function POST(request: NextRequest) {
@@ -23,8 +34,9 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
     }
 
-    // Only admins can restore items
-    const userRole = (session.user as { role?: string }).role
+    // Get role from appUsers table
+    const userRole = await getUserRole(session.user.id)
+    
     if (userRole !== "ADMIN") {
       return NextResponse.json({ error: "Admin access required to restore items" }, { status: 403 })
     }
